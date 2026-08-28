@@ -1,0 +1,91 @@
+# Firebase Realtime Database (RTDB) JSON Schema & Configuration
+
+This project syncs status and reads commands to/from **Firebase Realtime Database (RTDB)** using standard HTTPS REST calls (`netsync.cpp`).
+
+---
+
+## 1. Device Status Node: `/deskbuddy/status`
+
+Pushed by the ESP32 to Firebase every ~5 seconds (`FIREBASE_PUSH_INTERVAL_MS`).
+
+### Example JSON Payload:
+```json
+{
+  "distance_cm": 25.4,
+  "distance_min_cm": 2.9,
+  "distance_max_cm": 150.2,
+  "presence": true,
+  "ldr_raw": 1500,
+  "is_dark": false,
+  "light_on": true,
+  "light_mode": 2,
+  "light_mode_str": "AUTO",
+  "fan_on": false,
+  "fan_mode": 0,
+  "fan_mode_str": "OFF",
+  "timer_running": false,
+  "timer_remaining_ms": 0,
+  "task_count": 3,
+  "last_update": "2026-08-26 15:30:00"
+}
+```
+
+---
+
+## 2. Command Object Node: `/deskbuddy/command`
+
+Polled by the ESP32 from Firebase every ~2.5 seconds (`FIREBASE_PULL_INTERVAL_MS`). Once executed, the ESP32 resets this object back to `{}`.
+
+### Example JSON Payload:
+```json
+{
+  "light_mode": "AUTO",
+  "fan_mode": "ON",
+  "add_task": "Finish Project Report",
+  "set_timer_minutes": 25
+}
+```
+
+### Accepted Values:
+- **`light_mode` / `light`**: `"AUTO"` (or `"2"`), `"ON"` (or `"1"`), `"OFF"` (or `"0"`)
+- **`fan_mode` / `fan`**: `"AUTO"` (or `"2"`), `"ON"` (or `"1"`), `"OFF"` (or `"0"`)
+- **`add_task`**: String description of task to add to the companion list.
+- **`set_timer_minutes`**: Integer minutes to set and immediately start countdown timer.
+
+---
+
+## 3. Direct Node Controls
+
+You can also write string values directly to these standalone paths:
+- `/deskbuddy/light_mode` -> `"ON"`, `"OFF"`, or `"AUTO"`
+- `/deskbuddy/fan_mode`   -> `"ON"`, `"OFF"`, or `"AUTO"`
+
+---
+
+## 4. Firebase Realtime Database Security Rules
+
+Paste this into your **Firebase Console -> Realtime Database -> Rules**:
+
+### Open / Development Rules:
+```json
+{
+  "rules": {
+    "deskbuddy": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
+```
+
+### Authenticated / Production Rules:
+```json
+{
+  "rules": {
+    "deskbuddy": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
+```
