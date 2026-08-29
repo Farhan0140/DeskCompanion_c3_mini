@@ -8,11 +8,20 @@
 #include "inputs.h"
 #include "buzzer.h"
 #include "timer_task.h"
+#include "netsync.h"
+#include "wifi_portal.h"
 
 MenuState M;
 
-static const char* ROOT_ITEMS[] = {"Timer", "Tasks", "Devices", "Sensors"};
-static const int ROOT_COUNT = 4;
+static const char* ROOT_ITEMS[] = {"Timer", "Tasks", "Devices", "Sensors", "WiFi Setup"};
+static const int ROOT_COUNT = 5;
+
+// Set the moment SCR_WIFI first observes a live connection; menuUpdate()
+// holds the "Connected!" screen briefly, then auto-returns to the root
+// menu. 0 means "not connected yet" (also reset whenever the screen is
+// freshly opened).
+static unsigned long g_wifiConnectedAt = 0;
+static constexpr unsigned long WIFI_CONNECTED_HOLD_MS = 1200;
 
 void menuInit() { M.screen = SCR_IDLE; }
 
@@ -40,6 +49,7 @@ static void handleRoot(InputEvent ev) {
       case 1: M.screen = SCR_TASKS; M.cursor = 0; break;
       case 2: M.screen = SCR_DEVICES; M.cursor = 0; break;
       case 3: M.screen = SCR_SENSORS; break;
+      case 4: M.screen = SCR_WIFI; wifiPortalStart(); g_wifiConnectedAt = 0; break;
     }
     buzzerOk();
   }
@@ -137,8 +147,48 @@ void menuUpdate(unsigned long now) {
     return;
   }
 
-  // HOME button (or long idle) always jumps back to the face
-  if (ev == EV_HOME) { gotoIdle(); return; }
+  // HOME button always jumps back to the face. If the setup AP was up,
+  // tearing it down left WiFi disconnected — nudge netsync to retry
+  // right away instead of waiting out its normal 15s retry timer.
+  if (ev == EV_HOME) {
+    if (wifiPortalActive()) { wifiPortalStop(); netRequestReconnect(); }
+    gotoIdle();
+    return;
+  }
+
+  // WiFi setup: the "input" here comes from the phone over HTTP, not
+  // IR/buttons, so it's handled separately and exempted from the
+  // normal idle timeout below (entering a password can easily take
+  // longer than IDLE_TIMEOUT_MS with zero button presses).
+  if (M.screen == SCR_WIFI) {
+    if (wifiPortalCredsReady()) {
+      wifiPortalClearCredsReady();
+      wifiPortalStop();
+      netRequestReconnect();
+    }
+    if (ev == EV_BACK) {
+      wifiPortalStop();
+      netRequestReconnect(); // same reasoning as EV_HOME above — reconnect promptly even if creds weren't changed
+      M.screen = SCR_ROOT;
+      M.cursor = 4;
+      return;
+    }
+
+    // Once actually connected, hold the "Connected!" confirmation
+    // briefly, then drop back into the root menu automatically instead
+    // of waiting for a BACK press.
+    if (!wifiPortalActive() && netIsWifiConnected()) {
+      if (g_wifiConnectedAt == 0) g_wifiConnectedAt = now;
+      else if (now - g_wifiConnectedAt > WIFI_CONNECTED_HOLD_MS) {
+        M.screen = SCR_ROOT;
+        M.cursor = 4;
+      }
+    } else {
+      g_wifiConnectedAt = 0;
+    }
+    return;
+  }
+
   if (now - g_lastInputAt > IDLE_TIMEOUT_MS) { gotoIdle(); return; }
   if (ev == EV_NONE) return;
 
@@ -298,6 +348,25 @@ static void renderMenuScreen() {
       display.setCursor(0,50);
       display.print("Presence: ");
       display.println(S.presence ? "YES" : "NO");
+      display.display();
+      break;
+    }
+    case SCR_WIFI: {
+      display.clearDisplay();
+      display.setCursor(0,0); display.println("WIFI SETUP");
+      display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+      if (wifiPortalActive()) {
+        display.setCursor(0,16); display.print("AP: "); display.println(wifiPortalApSsid());
+        display.setCursor(0,28); display.print("IP: "); display.println(wifiPortalIP().toString());
+        display.setCursor(0,42); display.println("Join that WiFi, then");
+        display.setCursor(0,52); display.println("visit the IP above.");
+      } else if (netIsWifiConnected()) {
+        display.setCursor(0,26); display.println("Connected!");
+        display.setCursor(0,40); display.println("BACK to return");
+      } else {
+        display.setCursor(0,26); display.println("Connecting...");
+        display.setCursor(0,40); display.println("BACK to cancel");
+      }
       display.display();
       break;
     }

@@ -26,3 +26,14 @@ bool getLocalTimeStr(char *out, size_t outLen);
 // to call from core 1 (main loop); just sets a flag the core-0 task
 // polls.
 void netMarkModeDirty();
+
+// Call once the WiFi setup portal (see wifi_portal.h) has just saved
+// fresh credentials to NVS — reloads them and immediately (re)tries
+// WiFi.begin() with the new SSID/password instead of waiting out the
+// normal 15s retry timer on the old ones. Safe to call from core 1.
+void netRequestReconnect();
+
+// True once netsync has an active WiFi connection. Safe to poll from
+// core 1 (e.g. the WiFi Setup menu screen) — see the thread-safety
+// note on pushFirebaseStatus() in netsync.cpp.
+bool netIsWifiConnected();

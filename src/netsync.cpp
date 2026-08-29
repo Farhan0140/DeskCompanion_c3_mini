@@ -23,6 +23,7 @@
 #include "timer_task.h"
 #include "buzzer.h"
 #include "face.h"
+#include "wifi_portal.h"
 
 static WiFiClientSecure g_netClient;
 static bool g_wifiOk = false;
@@ -31,6 +32,12 @@ static unsigned long g_lastPush = 0;
 static unsigned long g_lastPull = 0;
 static unsigned long g_lastNtpResync = 0;
 static unsigned long g_lastWifiRetry = 0;
+
+// The credentials actually in use — loaded from NVS (saved by the
+// WiFi setup portal) if present, otherwise falling back to the
+// hardcoded defaults in secrets.h. See loadWifiCreds()/netInit().
+static char g_ssid[33] = "";
+static char g_pass[65] = "";
 
 static void netTask(void *pvParameters);       // forward decl — defined at bottom of this file
 static void pushFirebaseMode();                // forward decl — defined below, called from onWifiConnected() too
@@ -44,6 +51,25 @@ static volatile bool g_modeDirty = false;
 
 void netMarkModeDirty() {
   g_modeDirty = true;
+}
+
+// Set from core 1 once the WiFi setup portal has saved fresh
+// credentials. Same plain-flag reasoning as g_modeDirty above.
+static volatile bool g_credsDirty = false;
+
+void netRequestReconnect() {
+  g_credsDirty = true;
+}
+
+bool netIsWifiConnected() {
+  return g_wifiOk;
+}
+
+static void loadWifiCreds() {
+  if (!wifiCredsLoad(g_ssid, sizeof(g_ssid), g_pass, sizeof(g_pass))) {
+    strncpy(g_ssid, WIFI_SSID, sizeof(g_ssid) - 1);
+    strncpy(g_pass, WIFI_PASSWORD, sizeof(g_pass) - 1);
+  }
 }
 
 bool getLocalTimeStr(char *out, size_t outLen) {
@@ -66,8 +92,9 @@ bool getLocalTimeStr(char *out, size_t outLen) {
 // buttons feeling unresponsive: a slow or stalled HTTP request can no
 // longer block button polling, because they're not sharing a core.
 void netInit() {
+  loadWifiCreds();
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(g_ssid, g_pass);
   g_wifiOk = false;
   faceStartWifiConnecting(); // won't cut off the FACE_EVENT_BOOT hello just raised in setup()
   Serial.println(F("[WIFI] Connecting in background (face/menu/sensors/relays start immediately)"));
@@ -265,6 +292,24 @@ static void pullFirebaseCommands() {
 }
 
 static void netUpdate(unsigned long now) {
+  // The WiFi setup portal owns the radio (AP mode) while it's open —
+  // stay out of its way entirely until it hands control back.
+  if (wifiPortalActive()) return;
+
+  // The portal just saved fresh credentials — reload them and retry
+  // right away instead of waiting out the normal 15s retry timer on
+  // whatever (possibly wrong/blank) credentials were in use before.
+  if (g_credsDirty) {
+    g_credsDirty = false;
+    loadWifiCreds();
+    WiFi.disconnect();
+    g_wifiOk = false;
+    WiFi.begin(g_ssid, g_pass);
+    g_lastWifiRetry = now;
+    faceStartWifiConnecting();
+    Serial.println(F("[WIFI] New credentials saved, reconnecting..."));
+  }
+
   if (!g_wifiOk) {
     if (WiFi.status() == WL_CONNECTED) {
       onWifiConnected();
@@ -274,7 +319,7 @@ static void netUpdate(unsigned long now) {
       // and returns immediately; we keep polling status() here.
       g_lastWifiRetry = now;
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      WiFi.begin(g_ssid, g_pass);
       Serial.println(F("[WIFI] Still not connected, retrying..."));
     }
     return; // nothing else to do until we're actually online

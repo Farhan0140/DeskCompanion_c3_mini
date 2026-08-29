@@ -12,6 +12,7 @@ enum Screen {
   SCR_TASKS, SCR_TASK_LIST, SCR_TASK_ADD,
   SCR_DEVICES, SCR_LIGHT, SCR_FAN,
   SCR_SENSORS,
+  SCR_WIFI,
 };
 
 struct MenuState {

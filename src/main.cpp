@@ -33,6 +33,7 @@
 #include "timer_task.h"
 #include "menu.h"
 #include "netsync.h"
+#include "wifi_portal.h"
 
 void setup() {
   Serial.begin(115200);
@@ -83,6 +84,7 @@ void loop() {
   menuUpdate(now);            // consumes input events, updates UI state
   faceUpdate(now);            // eases eyes/mouth toward target every frame
   buzzerUpdate(now);          // non-blocking tone sequencer
+  wifiPortalUpdate(); // pumps the WiFi setup web/DNS servers — no-op unless that screen is open
 
   renderFrame(now);           // draws either menu or idle face, ~30-60 FPS
 }

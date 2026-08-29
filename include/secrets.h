@@ -4,7 +4,7 @@
 // =======================================================================
 
 #define WIFI_SSID       " "
-#define WIFI_PASSWORD   "`        `"
+#define WIFI_PASSWORD   "`         `"
 
 // Your Firebase Realtime Database base URL (no trailing slash).
 #define FIREBASE_HOST   "https://deskcompanionc3-default-rtdb.asia-southeast1.firebasedatabase.app"

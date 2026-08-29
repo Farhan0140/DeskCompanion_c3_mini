@@ -37,6 +37,11 @@ static constexpr unsigned long REPEAT_RATE_MS  = 120;
 static constexpr unsigned long IR_DEBOUNCE_MS  = 250;   // min interval between identical IR commands
 
 
+// ---- WiFi setup portal (see wifi_portal.cpp) ----
+// The ESP32's own hotspot name while the "WiFi Setup" menu screen is
+// open — open network, no password, so a phone can join it in one tap.
+#define WIFI_AP_SSID "DeskBuddy-Setup"
+
 // ---- Networking sync cadence ----
 static constexpr unsigned long FIREBASE_PUSH_INTERVAL_MS = 5000;   // push sensor/status
 static constexpr unsigned long FIREBASE_PULL_INTERVAL_MS = 2500;   // poll remote commands
