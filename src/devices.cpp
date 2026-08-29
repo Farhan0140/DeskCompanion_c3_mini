@@ -74,6 +74,7 @@ void devicesUpdate(unsigned long now) {
     D.lightOn = wantLight;
     relayWrite(PIN_RELAY_LIGHT, D.lightOn);
     buzzerClick();
+    faceShowEvent(D.lightOn ? FACE_EVENT_LIGHT_ON : FACE_EVENT_LIGHT_OFF);
   }
 
   // ---- Fan ----
@@ -89,5 +90,6 @@ void devicesUpdate(unsigned long now) {
     D.fanOn = wantFan;
     relayWrite(PIN_RELAY_FAN, D.fanOn);
     buzzerClick();
+    faceShowEvent(D.fanOn ? FACE_EVENT_FAN_ON : FACE_EVENT_FAN_OFF);
   }
 }

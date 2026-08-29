@@ -22,6 +22,7 @@
 #include "devices.h"
 #include "timer_task.h"
 #include "buzzer.h"
+#include "face.h"
 
 static WiFiClientSecure g_netClient;
 static bool g_wifiOk = false;
@@ -68,6 +69,7 @@ void netInit() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   g_wifiOk = false;
+  faceStartWifiConnecting(); // won't cut off the FACE_EVENT_BOOT hello just raised in setup()
   Serial.println(F("[WIFI] Connecting in background (face/menu/sensors/relays start immediately)"));
 
   xTaskCreatePinnedToCore(
@@ -93,6 +95,7 @@ static void onWifiConnected() {
   Serial.println(F("[NTP] Requested time sync"));
 
   buzzerWifiConnected(); // small confirmation beep, once
+  faceClearWifiConnecting();
 
   // Publish the locally-restored relay modes (devicesInit() loads
   // these from NVS at boot, see devices.cpp) to Firebase the instant
@@ -281,6 +284,7 @@ static void netUpdate(unsigned long now) {
   // and drop back into the reconnect loop above.
   if (WiFi.status() != WL_CONNECTED) {
     g_wifiOk = false;
+    faceStartWifiConnecting();
     Serial.println(F("[WIFI] Connection lost — retrying in background"));
     return;
   }

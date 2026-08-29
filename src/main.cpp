@@ -58,8 +58,9 @@ void setup() {
   faceInit();
   menuInit();
 
-  // Boot personality
-  faceSetExpression(EYE_HAPPY, MOUTH_HAPPY);
+  // Boot personality — "hi" + handshake icon, then WiFi connecting
+  // takes over the face (see netInit() below) once it starts.
+  faceShowEvent(FACE_EVENT_BOOT);
   buzzerBoot();
   showBootScreen();
 

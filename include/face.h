@@ -19,6 +19,24 @@ enum MouthExpression {
 
 enum GazeDir { GAZE_CENTER, GAZE_LEFT, GAZE_RIGHT, GAZE_UP, GAZE_DOWN };
 
+// Small badge icon drawn in the corner alongside an expression, to give
+// context-specific events (WiFi connecting, timer ringing, ...) a
+// distinct look beyond just the eyes/mouth. ICON_NONE draws nothing.
+enum FaceIcon { ICON_NONE, ICON_WIFI, ICON_BELL, ICON_HANDSHAKE, ICON_AIRFLOW, ICON_SWEAT, ICON_MOON };
+
+// Contextual events other modules can raise to take over the face for
+// a moment (or, for WIFI_CONNECTING, until explicitly cleared). See
+// faceShowEvent()/faceClearWifiConnecting() below.
+enum FaceEvent {
+  FACE_EVENT_BOOT,            // first boot greeting
+  FACE_EVENT_WIFI_CONNECTING, // held for as long as WiFi is (re)connecting
+  FACE_EVENT_TIMER_RING,      // timer alarm just fired
+  FACE_EVENT_FAN_ON,
+  FACE_EVENT_FAN_OFF,
+  FACE_EVENT_LIGHT_ON,
+  FACE_EVENT_LIGHT_OFF
+};
+
 // ---- current (eased/animated) values ----
 struct FaceAnim {
   // Eye geometry (shared L/R, mirrored around center)
@@ -67,6 +85,9 @@ struct FaceAnim {
   EyeExpression expr = EYE_NORMAL;
   MouthExpression mouthExpr = MOUTH_NEUTRAL;
 
+  // Corner badge icon for the currently-active contextual event, if any.
+  FaceIcon icon = ICON_NONE;
+
   unsigned long lastFrameMs = 0;
 };
 
@@ -84,3 +105,14 @@ void faceBlink();
 void faceWink(bool leftEye = true); // one-eye blink; auto-releases after ~0.3s
 void faceSetExpression(EyeExpression e, MouthExpression m);
 void faceRenderIdle();
+
+// Takes over the face for a contextual event: sets the matching
+// expression + corner icon immediately. FACE_EVENT_WIFI_CONNECTING
+// stays up (surviving retries) until faceClearWifiConnecting() is
+// called; every other event auto-reverts to the normal idle
+// personality loop a few seconds after being raised (or resumes
+// FACE_EVENT_WIFI_CONNECTING first, if that's still in progress).
+// Safe to call from either core — see face.cpp for details.
+void faceShowEvent(FaceEvent ev);
+void faceStartWifiConnecting(); // like faceShowEvent(FACE_EVENT_WIFI_CONNECTING), but won't cut off a transient event already showing (e.g. the boot hello)
+void faceClearWifiConnecting();

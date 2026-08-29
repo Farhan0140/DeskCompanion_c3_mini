@@ -96,7 +96,7 @@ void timerTaskUpdate(unsigned long now) {
     if (timerRemainingMs() == 0) {
       T.finished = true;
       T.running = false;
-      faceSetExpression(EYE_HAPPY, MOUTH_HAPPY);
+      faceShowEvent(FACE_EVENT_TIMER_RING);
       buzzerTimerAlarm();
       Serial.println(F("[TIMER] Complete"));
     }

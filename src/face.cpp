@@ -109,8 +109,110 @@ void faceInit() {
   faceSetExpression(EYE_NORMAL, MOUTH_NEUTRAL);
 }
 
+// ---- Contextual events (WiFi connecting, timer ring, fan/light,
+// first boot) — each takes over expr/mouth/icon for a while, then
+// hands control back to the idle personality loop below. Plain
+// globals are enough here (same reasoning as D in devices.h): these
+// are simple scalars, some are set from core 0 (netsync.cpp's
+// onWifiConnected running in netTask) and read/cleared from core 1
+// (faceUpdate in the main loop) — a stale read for one frame is
+// harmless for a face icon.
+static constexpr unsigned long FACE_EVENT_MS = 3000; // how long a transient event holds the face
+static bool g_eventActive = false;
+static bool g_wifiConnecting = false;
+static FaceEvent g_activeEvent = FACE_EVENT_BOOT;
+static unsigned long g_eventUntil = 0;
+
+static void applyEventVisual(FaceEvent ev) {
+  switch (ev) {
+    case FACE_EVENT_BOOT:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_HAPPY, MOUTH_HAPPY);
+      F.icon = ICON_HANDSHAKE;
+      break;
+    case FACE_EVENT_WIFI_CONNECTING:
+      faceSetGaze(GAZE_UP);
+      faceSetExpression(EYE_CONFUSED, MOUTH_NEUTRAL);
+      F.icon = ICON_WIFI;
+      break;
+    case FACE_EVENT_TIMER_RING:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_SURPRISED, MOUTH_SURPRISED);
+      F.icon = ICON_BELL;
+      break;
+    case FACE_EVENT_FAN_ON:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_SLEEPY, MOUTH_SMILE); // relaxed, half-lidded
+      F.icon = ICON_AIRFLOW;
+      break;
+    case FACE_EVENT_FAN_OFF:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_NORMAL, MOUTH_GRIMACE); // awkward "phew"
+      F.icon = ICON_SWEAT;
+      break;
+    case FACE_EVENT_LIGHT_ON:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_HAPPY, MOUTH_HAPPY);
+      F.icon = ICON_NONE;
+      break;
+    case FACE_EVENT_LIGHT_OFF:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_SLEEPY, MOUTH_NEUTRAL);
+      F.icon = ICON_MOON;
+      break;
+  }
+}
+
+void faceShowEvent(FaceEvent ev) {
+  if (ev == FACE_EVENT_WIFI_CONNECTING) g_wifiConnecting = true;
+  g_activeEvent = ev;
+  g_eventActive = true;
+  g_eventUntil = millis() + FACE_EVENT_MS; // ignored for WIFI_CONNECTING, see faceServiceEvent()
+  applyEventVisual(ev);
+}
+
+// Like faceShowEvent(FACE_EVENT_WIFI_CONNECTING), but won't cut off a
+// transient event that's already on screen (e.g. the FACE_EVENT_BOOT
+// hello at power-on) — it just marks WiFi as connecting and lets
+// faceServiceEvent() pick it up once that event's window ends. If
+// nothing else is currently showing (e.g. a later mid-session
+// reconnect), it takes over immediately, same as faceShowEvent().
+void faceStartWifiConnecting() {
+  g_wifiConnecting = true;
+  if (g_eventActive) return; // something else has priority right now
+  g_activeEvent = FACE_EVENT_WIFI_CONNECTING;
+  g_eventActive = true;
+  applyEventVisual(FACE_EVENT_WIFI_CONNECTING);
+}
+
+void faceClearWifiConnecting() {
+  g_wifiConnecting = false;
+  if (g_activeEvent == FACE_EVENT_WIFI_CONNECTING) {
+    g_eventActive = false; // hand back to idle loop next tick
+    F.icon = ICON_NONE;
+  }
+}
+
+// Expires transient events on the wall clock (runs even while a menu
+// is open, so an event doesn't linger stale once you back out) and
+// re-shows FACE_EVENT_WIFI_CONNECTING if it's still in progress once
+// whatever transient event was on top of it finishes.
+static void faceServiceEvent(unsigned long now) {
+  if (!g_eventActive) return;
+  if (g_activeEvent == FACE_EVENT_WIFI_CONNECTING) return; // persistent — cleared explicitly
+  if (now < g_eventUntil) return;
+
+  if (g_wifiConnecting) {
+    g_activeEvent = FACE_EVENT_WIFI_CONNECTING;
+    applyEventVisual(FACE_EVENT_WIFI_CONNECTING);
+  } else {
+    g_eventActive = false;
+    F.icon = ICON_NONE;
+  }
+}
+
 static void faceRunIdlePersonality(unsigned long now) {
-  if (g_menuActive) return;
+  if (g_menuActive || g_eventActive) return;
 
   // Cycles gaze + expression when nothing else is driving the face.
   // The lighthearted new expressions (WOW, a wink, a quick LAUGHING
@@ -145,6 +247,7 @@ void faceUpdate(unsigned long now) {
   float dtScale = (now - F.lastFrameMs) / (float)FRAME_INTERVAL_MS;
   F.lastFrameMs = now;
 
+  faceServiceEvent(now);
   faceRunIdlePersonality(now);
 
   // ---- Two-eye blink scheduling (spontaneous, like real blink cadence) ----
@@ -341,9 +444,83 @@ static void drawMouth() {
   }
 }
 
+// ---- Event icon badge --------------------------------------------
+// Drawn as a small black-filled circle with a white outline first —
+// that "punches a hole" through whatever's underneath (typically the
+// right eye, since the badge sits in the top-right corner) so the
+// glyph drawn on top of it stays legible regardless of eye size/shape.
+static constexpr int ICON_CX = 116, ICON_CY = 11, ICON_R = 10;
+
+static void drawIcon(FaceIcon icon) {
+  if (icon == ICON_NONE) return;
+  display.fillCircle(ICON_CX, ICON_CY, ICON_R, SSD1306_BLACK);
+  display.drawCircle(ICON_CX, ICON_CY, ICON_R, SSD1306_WHITE);
+
+  int cx = ICON_CX, cy = ICON_CY;
+  switch (icon) {
+    case ICON_WIFI: {
+      // Ascending signal bars; how many are "lit" cycles for a
+      // searching/pulsing feel while WiFi is (re)connecting.
+      int lit = 1 + ((millis() / 300) % 3);
+      if (lit >= 1) display.fillRect(cx - 6, cy + 3, 2, 3, SSD1306_WHITE);
+      if (lit >= 2) display.fillRect(cx - 2, cy,     2, 6, SSD1306_WHITE);
+      if (lit >= 3) display.fillRect(cx + 2, cy - 4, 2, 10, SSD1306_WHITE);
+      break;
+    }
+    case ICON_BELL: {
+      // Gentle side-to-side wiggle reads as "ringing".
+      int shake = (int)(sinf(millis() * 0.025f) * 2.0f);
+      display.fillRoundRect(cx - 4 + shake, cy - 6, 8, 8, 3, SSD1306_WHITE);
+      display.fillRect(cx - 5 + shake, cy + 1, 10, 2, SSD1306_WHITE);
+      display.fillCircle(cx + shake, cy + 5, 1, SSD1306_WHITE);
+      break;
+    }
+    case ICON_HANDSHAKE:
+      display.fillCircle(cx - 4, cy, 3, SSD1306_WHITE);
+      display.fillCircle(cx + 4, cy, 3, SSD1306_WHITE);
+      display.drawLine(cx - 4, cy, cx + 4, cy, SSD1306_WHITE);
+      break;
+    case ICON_AIRFLOW: {
+      // Three short flowing wavy lines, phase-animated left to right.
+      int phase = (millis() / 150) % 4;
+      for (int i = 0; i < 3; i++) {
+        int y = cy - 5 + i * 5;
+        int x0 = cx - 6 + ((phase + i) % 4);
+        display.drawLine(x0,     y, x0 + 4, y - 2, SSD1306_WHITE);
+        display.drawLine(x0 + 4, y - 2, x0 + 8, y, SSD1306_WHITE);
+      }
+      break;
+    }
+    case ICON_SWEAT: // anime-style sweat drop: circle + point
+      display.fillCircle(cx, cy + 3, 3, SSD1306_WHITE);
+      display.fillTriangle(cx - 3, cy + 1, cx + 3, cy + 1, cx, cy - 5, SSD1306_WHITE);
+      break;
+    case ICON_MOON: // crescent: white disc with a black disc bitten out
+      display.fillCircle(cx, cy, 6, SSD1306_WHITE);
+      display.fillCircle(cx + 3, cy - 2, 5, SSD1306_BLACK);
+      break;
+    default: break;
+  }
+}
+
+// Small drifting "z Z z" in the opposite corner from the icon badge,
+// only while the moon icon (light off / sleeping) is showing.
+static void drawSleepZs() {
+  const char *chars = "zZz";
+  for (int i = 0; i < 3; i++) {
+    int bob = (int)(sinf(millis() * 0.004f + i) * 2.0f);
+    display.setCursor(2 + i * 6, 2 + i * 3 + bob);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.print(chars[i]);
+  }
+}
+
 void faceRenderIdle() {
   display.clearDisplay();
   drawEyes();
   drawMouth();
+  drawIcon(F.icon);
+  if (F.icon == ICON_MOON) drawSleepZs();
   display.display();
 }
