@@ -10,4 +10,4 @@ int  LDR_THRESHOLD_OFF  = 1600;   // >= this (averaged) => bright
 bool AUTO_LIGHT_ENABLED = true;
 bool AUTO_FAN_ENABLED   = true;
 bool BUZZER_ENABLED     = true;
-int  BUZZER_VOLUME      = 60;   // 0-100, tune to taste; see buzzer.cpp
+int  BUZZER_VOLUME      = 100;   // 0-100, tune to taste; see buzzer.cpp

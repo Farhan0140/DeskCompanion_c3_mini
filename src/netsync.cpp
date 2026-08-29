@@ -31,7 +31,19 @@ static unsigned long g_lastPull = 0;
 static unsigned long g_lastNtpResync = 0;
 static unsigned long g_lastWifiRetry = 0;
 
-static void netTask(void *pvParameters); // forward decl — defined at bottom of this file
+static void netTask(void *pvParameters);       // forward decl — defined at bottom of this file
+static void pushFirebaseMode();                // forward decl — defined below, called from onWifiConnected() too
+
+// Set from core 1 (devices.cpp) whenever a relay mode changes locally
+// (IR remote, menu, ...). Cleared by netTask on core 0 once it has
+// pushed the new mode to Firebase. A plain flag is enough here: worst
+// case is one extra push, never a lost one (device.cpp only ever sets
+// it, never clears it).
+static volatile bool g_modeDirty = false;
+
+void netMarkModeDirty() {
+  g_modeDirty = true;
+}
 
 bool getLocalTimeStr(char *out, size_t outLen) {
   struct tm timeinfo;
@@ -81,6 +93,19 @@ static void onWifiConnected() {
   Serial.println(F("[NTP] Requested time sync"));
 
   buzzerWifiConnected(); // small confirmation beep, once
+
+  // Publish the locally-restored relay modes (devicesInit() loads
+  // these from NVS at boot, see devices.cpp) to Firebase the instant
+  // we come online, rather than pulling Firebase's copy over them.
+  // The device's own state is authoritative — Firebase's light_mode/
+  // fan_mode nodes are a mirror of it, updated here and on every
+  // local change (see netMarkModeDirty()). Pulling here instead would
+  // let a stale Firebase value (e.g. from before a reset) silently
+  // undo whatever the IR remote last set. Resetting g_lastPull keeps
+  // the regular pull cadence starting fresh from here.
+  Serial.println(F("[FB] Publishing locally-restored relay state to Firebase..."));
+  pushFirebaseMode();
+  g_lastPull = millis();
 }
 
 // ---- Firebase helpers ----
@@ -130,6 +155,17 @@ static const char* getModeStr(DeviceMode mode) {
     case MODE_OFF:  return "OFF";
     default:        return "AUTO";
   }
+}
+
+// Publishes D.lightMode/D.fanMode to Firebase's command/mirror nodes
+// (/deskbuddy/light_mode, /deskbuddy/fan_mode) — the same nodes
+// pullFirebaseCommands() reads back. Called right after a local mode
+// change (via the g_modeDirty flag) and once on (re)connect, so those
+// nodes always reflect whichever side changed most recently instead
+// of the device and Firebase fighting over stale values.
+static void pushFirebaseMode() {
+  firebasePut("/deskbuddy/light_mode", "\"" + String(getModeStr(D.lightMode)) + "\"");
+  firebasePut("/deskbuddy/fan_mode", "\"" + String(getModeStr(D.fanMode)) + "\"");
 }
 
 static DeviceMode parseDeviceMode(String val) {
@@ -247,6 +283,17 @@ static void netUpdate(unsigned long now) {
     g_wifiOk = false;
     Serial.println(F("[WIFI] Connection lost — retrying in background"));
     return;
+  }
+
+  // Handle a local mode change (IR remote, menu) before anything else
+  // this tick, and in particular before the periodic pull below: if
+  // both were due on the same tick, pulling first would fetch the
+  // still-stale Firebase value and stomp the change we're about to
+  // push. Pushing first means a same-tick pull just reads back what
+  // we pushed — a harmless no-op.
+  if (g_modeDirty) {
+    g_modeDirty = false;
+    pushFirebaseMode();
   }
 
   if (now - g_lastNtpResync > NTP_RESYNC_INTERVAL_MS) {
