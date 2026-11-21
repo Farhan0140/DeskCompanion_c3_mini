@@ -11,6 +11,7 @@
 #include "face.h"
 #include "config.h"
 #include "globals.h"
+#include "ble_control.h"
 
 FaceAnim F;
 bool g_menuActive = false;
@@ -54,6 +55,7 @@ void faceSetExpression(EyeExpression e, MouthExpression m) {
 
   // Reset per-expression targets; each case sets what differs.
   F.eyeW_t = 42; F.eyeH_t = 42;
+  F.squashL_t = 1.0f; F.squashR_t = 1.0f;
   F.lTilt_t = 0; F.rTilt_t = 0;
   F.browRaise_t = 0;
   F.mouthWidth_t = 30; F.mouthOpen_t = 0.15f; F.mouthSmile_t = 0;
@@ -86,6 +88,21 @@ void faceSetExpression(EyeExpression e, MouthExpression m) {
       // Squeezed almost shut with a slight upward curve; the actual
       // shaking motion is added in drawEyes()/drawMouth() below.
       F.eyeH_t = 8; F.lTilt_t = 6; F.rTilt_t = -6; break;
+
+    // ---- new expressions. For the custom-drawn ones (heart, star,
+    // spiral, shades, arcs) eyeW/eyeH just set the eased drawing size;
+    // see drawSpecialEyes() below.
+    case EYE_LOVE:       F.eyeW_t = 34; F.eyeH_t = 34; break;
+    case EYE_STAR:       F.eyeW_t = 38; F.eyeH_t = 38; break;
+    case EYE_DIZZY:      F.eyeW_t = 30; F.eyeH_t = 30; break;
+    case EYE_SUSPICIOUS: F.eyeH_t = 38; F.squashL_t = 0.35f; F.squashR_t = 0.7f; F.lTilt_t = 8; break;
+    case EYE_COOL:       F.eyeW_t = 42; F.eyeH_t = 22; break; // lens size
+    case EYE_SHY:        F.eyeW_t = 32; F.eyeH_t = 28; break; // + blush, drawn in drawEyes()
+    case EYE_BORED:      F.eyeH_t = 40; F.squashL_t = 0.4f; F.squashR_t = 0.4f; break; // + heavy lid line
+    case EYE_THINKING:   F.eyeH_t = 38; F.squashR_t = 0.8f; F.browRaise_t = 2; break; // + "..." dots
+    case EYE_SCARED:     F.eyeW_t = 28; F.eyeH_t = 36; F.browRaise_t = 5; break; // + tremble
+    case EYE_KAWAII:     F.eyeW_t = 30; F.eyeH_t = 30; break;
+    case EYE_CONTENT:    F.eyeW_t = 30; F.eyeH_t = 30; break;
     default: break; // EYE_NORMAL
   }
 
@@ -98,6 +115,10 @@ void faceSetExpression(EyeExpression e, MouthExpression m) {
     case MOUTH_LAUGH:     F.mouthSmile_t = 0.3f;  F.mouthOpen_t = 1.0f; F.mouthWidth_t = 30; break;
     case MOUTH_CRY:       F.mouthSmile_t = -0.9f; F.mouthOpen_t = 0.35f; break;
     case MOUTH_GRIMACE:   F.mouthSmile_t = -0.3f; F.mouthOpen_t = 0.25f; F.mouthWidth_t = 22; break;
+    case MOUTH_SMIRK:     F.mouthSmile_t = 0.8f;  F.mouthOpen_t = 0.0f; F.mouthWidth_t = 24; break;
+    case MOUTH_WAVY:      F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.0f; F.mouthWidth_t = 30; break;
+    case MOUTH_FLAT:      F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.0f; F.mouthWidth_t = 22; break;
+    case MOUTH_TONGUE:    F.mouthSmile_t = 0.7f;  F.mouthOpen_t = 0.15f; F.mouthWidth_t = 28; break;
     default:               F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.12f; break;
   }
 }
@@ -109,8 +130,8 @@ void faceInit() {
   faceSetExpression(EYE_NORMAL, MOUTH_NEUTRAL);
 }
 
-// ---- Contextual events (WiFi connecting, timer ring, fan/light,
-// first boot) — each takes over expr/mouth/icon for a while, then
+// ---- Contextual events (WiFi connecting, fan/light, first boot,
+// server health, BLE counter button) — each takes over expr/mouth/icon for a while, then
 // hands control back to the idle personality loop below. Plain
 // globals are enough here (same reasoning as D in devices.h): these
 // are simple scalars, some are set from core 0 (netsync.cpp's
@@ -122,8 +143,21 @@ static bool g_eventActive = false;
 static bool g_wifiConnecting = false;
 static FaceEvent g_activeEvent = FACE_EVENT_BOOT;
 static unsigned long g_eventUntil = 0;
+static const char *g_caption = nullptr; // small text label shown top-left during some events
+
+// How long each transient event holds the face.
+static unsigned long eventDurationMs(FaceEvent ev) {
+  switch (ev) {
+    case FACE_EVENT_BLE_COUNTED:  return 1200;  // fires on every press - keep it snappy
+    case FACE_EVENT_BLE_TARGET:   return 4000;
+    case FACE_EVENT_SERVER_OK:
+    case FACE_EVENT_SERVER_DOWN:  return 5000;
+    default:                      return FACE_EVENT_MS;
+  }
+}
 
 static void applyEventVisual(FaceEvent ev) {
+  g_caption = nullptr;
   switch (ev) {
     case FACE_EVENT_BOOT:
       faceSetGaze(GAZE_CENTER);
@@ -134,11 +168,6 @@ static void applyEventVisual(FaceEvent ev) {
       faceSetGaze(GAZE_UP);
       faceSetExpression(EYE_CONFUSED, MOUTH_NEUTRAL);
       F.icon = ICON_WIFI;
-      break;
-    case FACE_EVENT_TIMER_RING:
-      faceSetGaze(GAZE_CENTER);
-      faceSetExpression(EYE_SURPRISED, MOUTH_SURPRISED);
-      F.icon = ICON_BELL;
       break;
     case FACE_EVENT_FAN_ON:
       faceSetGaze(GAZE_CENTER);
@@ -160,6 +189,70 @@ static void applyEventVisual(FaceEvent ev) {
       faceSetExpression(EYE_SLEEPY, MOUTH_NEUTRAL);
       F.icon = ICON_MOON;
       break;
+
+    // ---- server health check ----
+    case FACE_EVENT_SERVER_OK:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_CONTENT, MOUTH_SMILE);
+      F.icon = ICON_CHECK;
+      g_caption = "SERVER OK";
+      break;
+    case FACE_EVENT_SERVER_DOWN:
+      faceSetGaze(GAZE_DOWN);
+      faceSetExpression(EYE_SAD, MOUTH_SAD);
+      F.icon = ICON_CROSS;
+      g_caption = "SERVER DOWN";
+      break;
+
+    // ---- BLE counter button ----
+    case FACE_EVENT_BLE_CONNECTED:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_HAPPY, MOUTH_HAPPY);
+      F.icon = ICON_BT;
+      g_caption = "CONNECTED";
+      break;
+    case FACE_EVENT_BLE_DISCONNECTED:
+      faceSetGaze(GAZE_DOWN);
+      faceSetExpression(EYE_SAD, MOUTH_SAD);
+      F.icon = ICON_BT_OFF;
+      g_caption = "DISCONNECTED";
+      break;
+    case FACE_EVENT_BLE_COUNTED:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_HAPPY, MOUTH_SMILE);
+      F.icon = ICON_BT;
+      g_caption = "+1";
+      break;
+    case FACE_EVENT_BLE_TARGET:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_STAR, MOUTH_HAPPY);
+      F.icon = ICON_BELL;
+      g_caption = "DONE!";
+      break;
+    case FACE_EVENT_BLE_ALREADY_DONE:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_BORED, MOUTH_FLAT);
+      F.icon = ICON_CHECK;
+      g_caption = "ALREADY DONE";
+      break;
+    case FACE_EVENT_BLE_NO_TASK:
+      faceSetGaze(GAZE_UP);
+      faceSetExpression(EYE_CONFUSED, MOUTH_NEUTRAL);
+      F.icon = ICON_BT;
+      g_caption = "NO TASK";
+      break;
+    case FACE_EVENT_BLE_NOT_RECEIVED:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_SAD, MOUTH_GRIMACE);
+      F.icon = ICON_CROSS;
+      g_caption = "NOT SENT";
+      break;
+    case FACE_EVENT_BLE_OFFLINE:
+      faceSetGaze(GAZE_CENTER);
+      faceSetExpression(EYE_CONFUSED, MOUTH_SAD);
+      F.icon = ICON_BT_OFF;
+      g_caption = "NO PHONE";
+      break;
   }
 }
 
@@ -167,7 +260,7 @@ void faceShowEvent(FaceEvent ev) {
   if (ev == FACE_EVENT_WIFI_CONNECTING) g_wifiConnecting = true;
   g_activeEvent = ev;
   g_eventActive = true;
-  g_eventUntil = millis() + FACE_EVENT_MS; // ignored for WIFI_CONNECTING, see faceServiceEvent()
+  g_eventUntil = millis() + eventDurationMs(ev); // ignored for WIFI_CONNECTING, see faceServiceEvent()
   applyEventVisual(ev);
 }
 
@@ -190,6 +283,7 @@ void faceClearWifiConnecting() {
   if (g_activeEvent == FACE_EVENT_WIFI_CONNECTING) {
     g_eventActive = false; // hand back to idle loop next tick
     F.icon = ICON_NONE;
+    g_caption = nullptr;
   }
 }
 
@@ -208,15 +302,16 @@ static void faceServiceEvent(unsigned long now) {
   } else {
     g_eventActive = false;
     F.icon = ICON_NONE;
+    g_caption = nullptr;
   }
 }
 
 static void faceRunIdlePersonality(unsigned long now) {
   if (g_menuActive || g_eventActive) return;
 
-  // Cycles gaze + expression when nothing else is driving the face.
-  // The lighthearted new expressions (WOW, a wink, a quick LAUGHING
-  // chuckle) are mixed in here for variety. CRYING and HEADACHE are
+  // Picks a random gaze + expression when nothing else is driving the
+  // face: the original 9 states (0-8, unchanged) plus the 10 newer
+  // expressions (9-18), never the same state twice in a row. CRYING and HEADACHE are
   // intentionally NOT part of the spontaneous idle loop — a desk
   // companion randomly crying for no reason would be a strange UX.
   // Trigger those two (and a wink) yourself from wherever makes sense
@@ -225,7 +320,10 @@ static void faceRunIdlePersonality(unsigned long now) {
   //   faceSetExpression(EYE_HEADACHE, MOUTH_GRIMACE);  // repeated errors
   //   faceWink(true);                                   // a little easter egg
   if (now >= F.idleStateChangeAt) {
-    F.idleStep = (F.idleStep + 1) % 9;
+    static constexpr uint8_t IDLE_STATE_COUNT = 19;
+    uint8_t next;
+    do { next = (uint8_t)random(0, IDLE_STATE_COUNT); } while (next == F.idleStep);
+    F.idleStep = next;
     switch (F.idleStep) {
       case 0: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_NORMAL,    MOUTH_NEUTRAL); break;
       case 1: faceSetGaze((GazeDir)random(1, 5));     faceSetExpression(EYE_CONFUSED,  MOUTH_NEUTRAL); break; // curious glance
@@ -237,6 +335,19 @@ static void faceRunIdlePersonality(unsigned long now) {
       case 7: faceSetGaze(GAZE_CENTER);               faceSetExpression(EYE_NORMAL,    MOUTH_SMILE);
               faceWink(random(0, 2) == 0);                                                              break; // wink
       case 8: faceSetGaze(GAZE_CENTER);               faceSetExpression(EYE_LAUGHING,  MOUTH_LAUGH);   break; // quick chuckle
+      // ---- new ----
+      case 9:  faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_LOVE,       MOUTH_SMILE);  break; // heart eyes
+      case 10: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_STAR,       MOUTH_HAPPY);  break; // star-struck
+      case 11: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_DIZZY,      MOUTH_WAVY);   break; // dizzy
+      case 12: faceSetGaze(random(0, 2) ? GAZE_LEFT : GAZE_RIGHT);
+               faceSetExpression(EYE_SUSPICIOUS, MOUTH_SMIRK);                                          break; // side-eye
+      case 13: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_COOL,       MOUTH_SMIRK);  break; // sunglasses
+      case 14: faceSetGaze(GAZE_DOWN);                faceSetExpression(EYE_SHY,        MOUTH_SMILE);  break; // blushing
+      case 15: faceSetGaze(random(0, 2) ? GAZE_LEFT : GAZE_RIGHT);
+               faceSetExpression(EYE_BORED,      MOUTH_FLAT);                                           break; // bored
+      case 16: faceSetGaze(GAZE_UP); F.pupilX_t = 8;  faceSetExpression(EYE_THINKING,   MOUTH_SMIRK);  break; // hmm...
+      case 17: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_SCARED,     MOUTH_WAVY);   break; // scared
+      case 18: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_KAWAII,     MOUTH_TONGUE); break; // ^ ^ :P
     }
     F.idleStateChangeAt = now + random(2200, 4500);
   }
@@ -301,6 +412,8 @@ void faceUpdate(unsigned long now) {
   F.eyeH    = ease(F.eyeH,    F.eyeH_t + breatheEye, EASE_SIZE);
   F.lidOpenL = ease(F.lidOpenL, F.lidOpenL_t, EASE_LID);
   F.lidOpenR = ease(F.lidOpenR, F.lidOpenR_t, EASE_LID);
+  F.squashL  = ease(F.squashL,  F.squashL_t,  EASE_SIZE);
+  F.squashR  = ease(F.squashR,  F.squashR_t,  EASE_SIZE);
   F.pupilX  = ease(F.pupilX,  F.pupilX_t,         EASE_POS);
   F.pupilY  = ease(F.pupilY,  F.pupilY_t,         EASE_POS);
   F.lTiltDeg = ease(F.lTiltDeg, F.lTilt_t,        EASE_TILT);
@@ -371,17 +484,154 @@ static inline int laughShakeX() {
   return (int)(sinf(millis() * 0.03f) * 2.5f);
 }
 
+// ---- Custom-shaped eyes for the newer expressions -------------------
+static void drawHeart(int cx, int cy, float size) {
+  int r = max(2, (int)(size / 4));
+  int top = cy - r / 2;
+  display.fillCircle(cx - r, top, r, SSD1306_WHITE);
+  display.fillCircle(cx + r, top, r, SSD1306_WHITE);
+  display.fillTriangle(cx - 2 * r, top + 1, cx + 2 * r, top + 1, cx, top + 2 * r + r / 2 + 2, SSD1306_WHITE);
+}
+
+static void drawStar(int cx, int cy, float R, float rot) {
+  float r = R * 0.45f;
+  int16_t px[10], py[10];
+  for (int i = 0; i < 10; i++) {
+    float a = -PI / 2 + rot + i * PI / 5;
+    float rad = (i % 2 == 0) ? R : r;
+    px[i] = cx + (int)(cosf(a) * rad);
+    py[i] = cy + (int)(sinf(a) * rad);
+  }
+  for (int i = 0; i < 10; i++) {
+    int j = (i + 1) % 10;
+    display.fillTriangle(cx, cy, px[i], py[i], px[j], py[j], SSD1306_WHITE);
+  }
+}
+
+static void drawSpiral(int cx, int cy, float R, float spin) {
+  const int N = 36;
+  const float TURNS = 2.5f;
+  int px = cx, py = cy;
+  for (int i = 1; i <= N; i++) {
+    float t = (float)i / N;
+    float a = spin + t * TURNS * 2 * PI;
+    int x = cx + (int)(cosf(a) * t * R);
+    int y = cy + (int)(sinf(a) * t * R);
+    display.drawLine(px, py, x, y, SSD1306_WHITE);
+    display.drawLine(px + 1, py, x + 1, y, SSD1306_WHITE); // 2px stroke so it reads at 128x64
+    px = x; py = y;
+  }
+}
+
+// Half-circle arc eyes: up = "^ ^" (kawaii), down = "u u" (content).
+static void drawArcEye(int cx, int cy, int R, bool up) {
+  for (int r = R - 2; r <= R; r++) {
+    if (up) display.drawCircleHelper(cx, cy + R / 2, r, 1 | 2, SSD1306_WHITE);
+    else    display.drawCircleHelper(cx, cy - R / 2, r, 4 | 8, SSD1306_WHITE);
+  }
+}
+
+static void drawShades(int leftCx, int rightCx, int cy) {
+  int w = (int)F.eyeW, h = (int)F.eyeH;
+  int top = cy - h / 2;
+  const int cxs[2] = {leftCx, rightCx};
+  for (int i = 0; i < 2; i++) {
+    int cx = cxs[i];
+    display.fillRoundRect(cx - w / 2, top, w, h, 7, SSD1306_WHITE);
+    // glint
+    display.drawLine(cx - w / 2 + 6, top + h - 5, cx - w / 2 + 13, top + 3, SSD1306_BLACK);
+    display.drawLine(cx - w / 2 + 9, top + h - 5, cx - w / 2 + 16, top + 3, SSD1306_BLACK);
+  }
+  display.fillRect(leftCx + w / 2, top + 2, (rightCx - leftCx) - w, 3, SSD1306_WHITE); // bridge
+  display.drawLine(leftCx - w / 2, top + 3, 0, top + 1, SSD1306_WHITE);                // arms
+  display.drawLine(rightCx + w / 2, top + 3, SCREEN_WIDTH - 1, top + 1, SSD1306_WHITE);
+}
+
+// Draws the eyes for expressions that don't use the rounded-rect eye at
+// all. Returns false for every other expression (incl. all the original
+// ones), which then draw exactly as before.
+static bool drawSpecialEyes(int leftCx, int rightCx, int cy) {
+  unsigned long ms = millis();
+  // A normal two-eye blink still reads on shaped eyes as a closed line.
+  bool closedL = F.lidOpenL < 0.3f, closedR = F.lidOpenR < 0.3f;
+  int w = (int)F.eyeW;
+  switch (F.expr) {
+    case EYE_LOVE: {
+      float pulse = 1.0f + 0.08f * sinf(ms * 0.012f); // heartbeat
+      if (closedL) display.drawFastHLine(leftCx - w / 2, cy, w, SSD1306_WHITE); else drawHeart(leftCx, cy, F.eyeW * pulse);
+      if (closedR) display.drawFastHLine(rightCx - w / 2, cy, w, SSD1306_WHITE); else drawHeart(rightCx, cy, F.eyeW * pulse);
+      return true;
+    }
+    case EYE_STAR: {
+      float R = F.eyeW / 2 * (1.0f + 0.07f * sinf(ms * 0.015f)); // twinkle
+      float rot = sinf(ms * 0.003f) * 0.25f;
+      if (closedL) display.drawFastHLine(leftCx - w / 2, cy, w, SSD1306_WHITE); else drawStar(leftCx, cy, R, rot);
+      if (closedR) display.drawFastHLine(rightCx - w / 2, cy, w, SSD1306_WHITE); else drawStar(rightCx, cy, R, -rot);
+      return true;
+    }
+    case EYE_DIZZY: {
+      float spin = ms * 0.008f;
+      drawSpiral(leftCx, cy, F.eyeW / 2, spin);
+      drawSpiral(rightCx, cy, F.eyeW / 2, -spin); // counter-rotating
+      return true;
+    }
+    case EYE_COOL:
+      drawShades(leftCx, rightCx, cy);
+      return true;
+    case EYE_KAWAII:
+      drawArcEye(leftCx, cy, w / 2, true);
+      drawArcEye(rightCx, cy, w / 2, true);
+      return true;
+    case EYE_CONTENT:
+      drawArcEye(leftCx, cy, w / 2, false);
+      drawArcEye(rightCx, cy, w / 2, false);
+      return true;
+    default:
+      return false;
+  }
+}
+
 static void drawEyes() {
   int baseY = 26;
   int shake = laughShakeX();
-  int leftCx  = SCREEN_WIDTH/2 - 26 + (int)F.pupilX + shake;
-  int rightCx = SCREEN_WIDTH/2 + 26 + (int)F.pupilX + shake;
+  int tremble = (F.expr == EYE_SCARED) ? (int)random(-1, 2) : 0;
+  int leftCx  = SCREEN_WIDTH/2 - 26 + (int)F.pupilX + shake + tremble;
+  int rightCx = SCREEN_WIDTH/2 + 26 + (int)F.pupilX + shake + tremble;
   int cy = baseY + (int)F.pupilY - (int)F.browRaise;
 
-  drawOneEye(leftCx, cy, F.lidOpenL);
-  drawOneEye(rightCx, cy, F.lidOpenR);
-  drawEyelidTilt(leftCx,  cy, F.lTiltDeg, F.eyeH * F.lidOpenL, F.eyeW);
-  drawEyelidTilt(rightCx, cy, F.rTiltDeg, F.eyeH * F.lidOpenR, F.eyeW);
+  if (drawSpecialEyes(leftCx, rightCx, cy)) return;
+
+  // squash is 1.0 for all original expressions -> identical to before
+  float lidL = F.lidOpenL * F.squashL;
+  float lidR = F.lidOpenR * F.squashR;
+  drawOneEye(leftCx, cy, lidL);
+  drawOneEye(rightCx, cy, lidR);
+  drawEyelidTilt(leftCx,  cy, F.lTiltDeg, F.eyeH * lidL, F.eyeW);
+  drawEyelidTilt(rightCx, cy, F.rTiltDeg, F.eyeH * lidR, F.eyeW);
+
+  if (F.expr == EYE_BORED) {
+    // heavy flat upper lid line over each half-closed eye
+    int w = (int)F.eyeW;
+    int topL = cy - (int)(max(2.0f, F.eyeH * lidL) / 2) - 3;
+    int topR = cy - (int)(max(2.0f, F.eyeH * lidR) / 2) - 3;
+    display.fillRect(leftCx - w / 2 - 2,  topL, w + 4, 2, SSD1306_WHITE);
+    display.fillRect(rightCx - w / 2 - 2, topR, w + 4, 2, SSD1306_WHITE);
+  }
+  if (F.expr == EYE_SHY) {
+    // blush hatching on the outer cheeks
+    for (int k = 0; k < 3; k++) {
+      int xl = leftCx - 14 + k * 5, xr = rightCx + 4 + k * 5;
+      display.drawLine(xl, 56, xl + 3, 51, SSD1306_WHITE);
+      display.drawLine(xr, 56, xr + 3, 51, SSD1306_WHITE);
+    }
+  }
+  if (F.expr == EYE_THINKING) {
+    // "..." thought dots appearing one by one, top-left
+    int n = (millis() / 350) % 4;
+    if (n >= 1) display.fillCircle(4, 14, 1, SSD1306_WHITE);
+    if (n >= 2) display.fillCircle(9, 9, 2, SSD1306_WHITE);
+    if (n >= 3) display.fillCircle(16, 4, 3, SSD1306_WHITE);
+  }
 
   if (F.expr == EYE_CRYING) {
     int eyeBottomY = cy + (int)(F.eyeH / 2);
@@ -415,6 +665,21 @@ static void drawMouth() {
     return;
   }
 
+  if (F.mouthExpr == MOUTH_WAVY) {
+    // Wobbly travelling sine line - nervous/dizzy.
+    const int SEG = 16;
+    float ph = millis() * 0.012f;
+    int prevX = 0, prevY = 0;
+    for (int i = 0; i <= SEG; i++) {
+      float t = (float)i / SEG;
+      int x = cx + (int)((t - 0.5f) * w);
+      int y = cy + (int)(sinf(t * 3 * PI + ph) * 2.5f);
+      if (i > 0) display.drawLine(prevX, prevY, x, y, SSD1306_WHITE);
+      prevX = x; prevY = y;
+    }
+    return;
+  }
+
   // Ranges tuned to be clearly visible on a 64px-tall display: up to
   // ~7px corner lift/drop for smile/frown, ~10px open bulge.
   float smile   = constrain(F.mouthSmile, -1.0f, 1.0f);
@@ -433,6 +698,7 @@ static void drawMouth() {
     // Cup/arc shape: at center (nx=0) the curve contributes nothing;
     // at the corners (nx=+-1) it lifts (smile) or drops (frown).
     float arc = smileBend * (nx * nx);
+    if (F.mouthExpr == MOUTH_SMIRK && nx < 0) arc *= 0.15f; // only the right corner lifts
 
     // Vertical bulge, strongest at mouth center, for open/talking shapes.
     float bulge = sinf(t * PI) * openPx;
@@ -441,6 +707,11 @@ static void drawMouth() {
     int y = cy - (int)arc + (int)(bulge * 0.4f);
     if (i > 0) display.drawLine(prevX, prevY, x, y, SSD1306_WHITE);
     prevX = x; prevY = y;
+  }
+
+  if (F.mouthExpr == MOUTH_TONGUE) {
+    display.fillCircle(cx + 3, cy + 3, 3, SSD1306_WHITE);
+    display.drawFastVLine(cx + 3, cy + 2, 3, SSD1306_BLACK); // tongue groove
   }
 }
 
@@ -499,6 +770,30 @@ static void drawIcon(FaceIcon icon) {
       display.fillCircle(cx, cy, 6, SSD1306_WHITE);
       display.fillCircle(cx + 3, cy - 2, 5, SSD1306_BLACK);
       break;
+    case ICON_BT:
+    case ICON_BT_OFF: // Bluetooth rune (+ a slash when disconnected)
+      display.drawLine(cx - 1, cy - 7, cx - 1, cy + 7, SSD1306_WHITE);
+      display.drawLine(cx - 1, cy - 7, cx + 4, cy - 3, SSD1306_WHITE);
+      display.drawLine(cx + 4, cy - 3, cx - 5, cy + 4, SSD1306_WHITE);
+      display.drawLine(cx - 1, cy + 7, cx + 4, cy + 3, SSD1306_WHITE);
+      display.drawLine(cx + 4, cy + 3, cx - 5, cy - 4, SSD1306_WHITE);
+      if (icon == ICON_BT_OFF) {
+        display.drawLine(cx - 7, cy - 7, cx + 7, cy + 7, SSD1306_WHITE);
+        display.drawLine(cx - 6, cy - 7, cx + 7, cy + 6, SSD1306_WHITE);
+      }
+      break;
+    case ICON_CHECK:
+      for (int t = 0; t < 2; t++) {
+        display.drawLine(cx - 6, cy + t, cx - 2, cy + 4 + t, SSD1306_WHITE);
+        display.drawLine(cx - 2, cy + 4 + t, cx + 6, cy - 5 + t, SSD1306_WHITE);
+      }
+      break;
+    case ICON_CROSS:
+      for (int t = 0; t < 2; t++) {
+        display.drawLine(cx - 5 + t, cy - 5, cx + 5 + t, cy + 5, SSD1306_WHITE);
+        display.drawLine(cx - 5 + t, cy + 5, cx + 5 + t, cy - 5, SSD1306_WHITE);
+      }
+      break;
     default: break;
   }
 }
@@ -516,11 +811,47 @@ static void drawSleepZs() {
   }
 }
 
+// Event caption ("SERVER OK", "+1", ...) in a black box, top-left.
+static void drawCaption() {
+  if (!g_caption) return;
+  int len = strlen(g_caption);
+  display.fillRect(0, 0, len * 6 + 3, 10, SSD1306_BLACK);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(1, 1);
+  display.print(g_caption);
+}
+
+// Replaces the Dev Module's BLE status LED: a tiny Bluetooth rune in the
+// bottom-left corner while a phone is connected, plus a check when the
+// app's task is complete or a "?" when no task is selected. Nothing is
+// drawn while searching/advertising.
+static void drawBleStatus() {
+  BleStatus st = bleStatus();
+  if (st == BLE_STATUS_SEARCHING) return;
+  display.drawLine(4, 54, 4, 63, SSD1306_WHITE);
+  display.drawLine(4, 54, 7, 57, SSD1306_WHITE);
+  display.drawLine(7, 57, 1, 61, SSD1306_WHITE);
+  display.drawLine(4, 63, 7, 60, SSD1306_WHITE);
+  display.drawLine(7, 60, 1, 56, SSD1306_WHITE);
+  if (st == BLE_STATUS_DONE) {
+    display.drawLine(10, 59, 12, 61, SSD1306_WHITE);
+    display.drawLine(12, 61, 16, 56, SSD1306_WHITE);
+  } else if (st == BLE_STATUS_NO_TASK) {
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(10, 56);
+    display.print('?');
+  }
+}
+
 void faceRenderIdle() {
   display.clearDisplay();
   drawEyes();
   drawMouth();
   drawIcon(F.icon);
   if (F.icon == ICON_MOON) drawSleepZs();
+  drawCaption();
+  drawBleStatus();
   display.display();
 }

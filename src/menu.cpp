@@ -7,14 +7,17 @@
 #include "devices.h"
 #include "inputs.h"
 #include "buzzer.h"
-#include "timer_task.h"
+#include "settings.h"
 #include "netsync.h"
 #include "wifi_portal.h"
+#include "ble_control.h"
 
 MenuState M;
 
-static const char* ROOT_ITEMS[] = {"Timer", "Tasks", "Devices", "Sensors", "WiFi Setup"};
-static const int ROOT_COUNT = 5;
+static const char* ROOT_ITEMS[] = {"Devices", "Sensors", "Threshold Setup", "WiFi Setup"};
+static const int ROOT_COUNT = 4;
+// Root-menu cursor positions, used when backing out of a sub-screen.
+enum { ROOT_DEVICES = 0, ROOT_SENSORS = 1, ROOT_THRESH = 2, ROOT_WIFI = 3 };
 
 // Set the moment SCR_WIFI first observes a live connection; menuUpdate()
 // holds the "Connected!" screen briefly, then auto-returns to the root
@@ -45,70 +48,20 @@ static void handleRoot(InputEvent ev) {
   if (ev == EV_BACK) gotoIdle();
   if (ev == EV_OK) {
     switch (M.cursor) {
-      case 0: M.screen = SCR_TIMER; M.cursor = 0; break;
-      case 1: M.screen = SCR_TASKS; M.cursor = 0; break;
-      case 2: M.screen = SCR_DEVICES; M.cursor = 0; break;
-      case 3: M.screen = SCR_SENSORS; break;
-      case 4: M.screen = SCR_WIFI; wifiPortalStart(); g_wifiConnectedAt = 0; break;
+      case ROOT_DEVICES: M.screen = SCR_DEVICES; M.cursor = 0; break;
+      case ROOT_SENSORS: M.screen = SCR_SENSORS; break;
+      case ROOT_THRESH:  M.screen = SCR_THRESH; M.cursor = 0; break;
+      case ROOT_WIFI:    M.screen = SCR_WIFI; wifiPortalStart(); g_wifiConnectedAt = 0; break;
     }
     buzzerOk();
   }
-}
-
-static void handleTimer(InputEvent ev) {
-  const int N = 3; // Start, Set Time, Cancel
-  if (ev == EV_UP)   M.cursor = (M.cursor + N - 1) % N;
-  if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % N;
-  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = 0; }
-  if (ev == EV_OK) {
-    if (M.cursor == 0) { timerStart(); buzzerOk(); gotoIdle(); }
-    else if (M.cursor == 1) { M.screen = SCR_TIMER_SET; M.setField = 0; }
-    else { timerCancel(); buzzerOk(); }
-  }
-}
-
-static void handleTimerSet(InputEvent ev) {
-  int *fields[3] = {&T.setHours, &T.setMinutes, &T.setSeconds};
-  int maxVal[3] = {min(TIMER_MAX_MINUTES/60, 23), 59, 59};
-  if (ev == EV_UP)   *fields[M.setField] = (*fields[M.setField] + 1) % (maxVal[M.setField] + 1);
-  if (ev == EV_DOWN) *fields[M.setField] = (*fields[M.setField] + maxVal[M.setField]) % (maxVal[M.setField] + 1);
-  if (ev == EV_OK)   M.setField = (M.setField + 1) % 3;
-  if (ev == EV_BACK) M.screen = SCR_TIMER;
-}
-
-static void handleTasks(InputEvent ev) {
-  const int N = 2; // Task List, Add Task
-  if (ev == EV_UP)   M.cursor = (M.cursor + N - 1) % N;
-  if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % N;
-  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = 1; }
-  if (ev == EV_OK) {
-    if (M.cursor == 0) { M.screen = SCR_TASK_LIST; M.cursor = 0; }
-    else { M.screen = SCR_TASK_ADD; }
-  }
-}
-
-static void handleTaskList(InputEvent ev) {
-  if (g_taskCount == 0) { if (ev == EV_BACK) M.screen = SCR_TASKS; return; }
-  if (ev == EV_UP)   M.cursor = (M.cursor + g_taskCount - 1) % g_taskCount;
-  if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % g_taskCount;
-  if (ev == EV_OK)   taskToggleDone((uint8_t)M.cursor);
-  if (ev == EV_BACK) { M.screen = SCR_TASKS; M.cursor = 0; }
-}
-
-static const char* TASK_PRESETS[] = {"Study", "Project", "Exercise", "Reading", "Chores", "Custom"};
-static const int TASK_PRESET_COUNT = 6;
-static void handleTaskAdd(InputEvent ev) {
-  if (ev == EV_UP)   M.cursor = (M.cursor + TASK_PRESET_COUNT - 1) % TASK_PRESET_COUNT;
-  if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % TASK_PRESET_COUNT;
-  if (ev == EV_OK)   { taskAdd(TASK_PRESETS[M.cursor]); buzzerOk(); M.screen = SCR_TASKS; }
-  if (ev == EV_BACK) M.screen = SCR_TASKS;
 }
 
 static void handleDevices(InputEvent ev) {
   const int N = 2;
   if (ev == EV_UP)   M.cursor = (M.cursor + N - 1) % N;
   if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % N;
-  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = 2; }
+  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = ROOT_DEVICES; }
   if (ev == EV_OK) { M.screen = (M.cursor == 0) ? SCR_LIGHT : SCR_FAN; M.cursor = 0; }
 }
 
@@ -135,7 +88,52 @@ static void handleFan(InputEvent ev) {
 }
 
 static void handleSensors(InputEvent ev) {
-  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = 3; }
+  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = ROOT_SENSORS; }
+}
+
+// ---- Threshold Setup ----
+static void handleThresh(InputEvent ev) {
+  const int N = 2; // Ultrasonic, LDR
+  if (ev == EV_UP)   M.cursor = (M.cursor + N - 1) % N;
+  if (ev == EV_DOWN) M.cursor = (M.cursor + 1) % N;
+  if (ev == EV_BACK) { M.screen = SCR_ROOT; M.cursor = ROOT_THRESH; }
+  if (ev == EV_OK)   { M.screen = (M.cursor == 0) ? SCR_THRESH_US : SCR_THRESH_LDR; M.setField = 0; }
+}
+
+// UP/DOWN adjusts the selected value by one step, OK switches between
+// the two values, BACK returns. Every change is saved to NVS right away
+// (settingsSaveThresholds()), so nothing is lost to the idle timeout.
+// The hysteresis gap is enforced: ON must stay below OFF by >= 1 step.
+static void handleThreshUs(InputEvent ev) {
+  if (ev == EV_OK)   { M.setField ^= 1; return; }
+  if (ev == EV_BACK) { M.screen = SCR_THRESH; M.cursor = 0; return; }
+  if (ev != EV_UP && ev != EV_DOWN) return;
+  int delta = (ev == EV_UP) ? DISTANCE_STEP_CM : -DISTANCE_STEP_CM;
+  int on  = (int)lroundf(DISTANCE_ON_CM);
+  int off = (int)lroundf(DISTANCE_OFF_CM);
+  int &v  = (M.setField == 0) ? on : off;
+  int lo  = (M.setField == 0) ? DISTANCE_MIN_CM : on + DISTANCE_STEP_CM;
+  int hi  = (M.setField == 0) ? off - DISTANCE_STEP_CM : DISTANCE_MAX_CM;
+  int nv  = v + delta;
+  if (nv < lo || nv > hi) { buzzerError(); return; }
+  v = nv;
+  DISTANCE_ON_CM  = (float)on;
+  DISTANCE_OFF_CM = (float)off;
+  settingsSaveThresholds();
+}
+
+static void handleThreshLdr(InputEvent ev) {
+  if (ev == EV_OK)   { M.setField ^= 1; return; }
+  if (ev == EV_BACK) { M.screen = SCR_THRESH; M.cursor = 1; return; }
+  if (ev != EV_UP && ev != EV_DOWN) return;
+  int delta = (ev == EV_UP) ? LDR_STEP : -LDR_STEP;
+  int &v  = (M.setField == 0) ? LDR_THRESHOLD_ON : LDR_THRESHOLD_OFF;
+  int lo  = (M.setField == 0) ? LDR_MIN : LDR_THRESHOLD_ON + LDR_STEP;
+  int hi  = (M.setField == 0) ? LDR_THRESHOLD_OFF - LDR_STEP : LDR_MAX;
+  int nv  = v + delta;
+  if (nv < lo || nv > hi) { buzzerError(); return; }
+  v = nv;
+  settingsSaveThresholds();
 }
 
 void menuUpdate(unsigned long now) {
@@ -170,7 +168,7 @@ void menuUpdate(unsigned long now) {
       wifiPortalStop();
       netRequestReconnect(); // same reasoning as EV_HOME above — reconnect promptly even if creds weren't changed
       M.screen = SCR_ROOT;
-      M.cursor = 4;
+      M.cursor = ROOT_WIFI;
       return;
     }
 
@@ -181,7 +179,7 @@ void menuUpdate(unsigned long now) {
       if (g_wifiConnectedAt == 0) g_wifiConnectedAt = now;
       else if (now - g_wifiConnectedAt > WIFI_CONNECTED_HOLD_MS) {
         M.screen = SCR_ROOT;
-        M.cursor = 4;
+        M.cursor = ROOT_WIFI;
       }
     } else {
       g_wifiConnectedAt = 0;
@@ -193,27 +191,30 @@ void menuUpdate(unsigned long now) {
   if (ev == EV_NONE) return;
 
   switch (M.screen) {
-    case SCR_ROOT:      handleRoot(ev); break;
-    case SCR_TIMER:      handleTimer(ev); break;
-    case SCR_TIMER_SET:  handleTimerSet(ev); break;
-    case SCR_TASKS:      handleTasks(ev); break;
-    case SCR_TASK_LIST:  handleTaskList(ev); break;
-    case SCR_TASK_ADD:   handleTaskAdd(ev); break;
+    case SCR_ROOT:       handleRoot(ev); break;
     case SCR_DEVICES:    handleDevices(ev); break;
     case SCR_LIGHT:      handleLight(ev); break;
     case SCR_FAN:        handleFan(ev); break;
     case SCR_SENSORS:    handleSensors(ev); break;
+    case SCR_THRESH:     handleThresh(ev); break;
+    case SCR_THRESH_US:  handleThreshUs(ev); break;
+    case SCR_THRESH_LDR: handleThreshLdr(ev); break;
     default: break;
   }
 }
 
 // ---- Rendering -------------------------------------------------------
-static void drawListMenu(const char *title, const char **items, int count, int cursor) {
+static void drawListMenu(const char *title, const char **items, int count, int cursor,
+                         const char *badge = nullptr) {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.println(title);
+  if (badge) { // small right-aligned status text in the title bar
+    display.setCursor(SCREEN_WIDTH - (int)strlen(badge) * 6, 0);
+    display.print(badge);
+  }
   display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
   for (int i = 0; i < count; i++) {
     display.setCursor(6, 14 + i * 11);
@@ -237,62 +238,7 @@ static void renderMenuScreen() {
   char buf[24];
   switch (M.screen) {
     case SCR_ROOT:
-      drawListMenu("DESK BUDDY", ROOT_ITEMS, ROOT_COUNT, M.cursor);
-      break;
-    case SCR_TIMER: {
-      const char *items[] = {"Start", "Set Time", "Cancel"};
-      display.clearDisplay();
-      display.setCursor(0,0); display.println("TIMER");
-      unsigned long rem = timerRemainingMs();
-      int h = rem / 3600000; int m = (rem / 60000) % 60; int s = (rem / 1000) % 60;
-      snprintf(buf, sizeof(buf), "%02d:%02d:%02d", h, m, s);
-      display.setCursor(0, 12); display.println(buf);
-      for (int i = 0; i < 3; i++) {
-        display.setCursor(6, 26 + i * 11);
-        display.print(i == M.cursor ? "> " : "  ");
-        display.println(items[i]);
-      }
-      display.display();
-      break;
-    }
-    case SCR_TIMER_SET: {
-      display.clearDisplay();
-      display.setCursor(0,0); display.println("SET TIMER");
-      const char* labels[3] = {"Hours", "Minutes", "Seconds"};
-      int vals[3] = {T.setHours, T.setMinutes, T.setSeconds};
-      for (int i = 0; i < 3; i++) {
-        display.setCursor(0, 14 + i*11);
-        display.print(i == M.setField ? "> " : "  ");
-        snprintf(buf, sizeof(buf), "%-8s%02d", labels[i], vals[i]);
-        display.println(buf);
-      }
-      display.setCursor(0, 52); display.println("OK: next  BACK: done");
-      display.display();
-      break;
-    }
-    case SCR_TASKS: {
-      const char *items[] = {"Task List", "Add Task"};
-      drawListMenu("TASKS", items, 2, M.cursor);
-      break;
-    }
-    case SCR_TASK_LIST: {
-      display.clearDisplay();
-      display.setCursor(0,0); display.println("TASKS");
-      if (g_taskCount == 0) {
-        display.setCursor(0,16); display.println("(empty)");
-      } else {
-        for (int i = 0; i < g_taskCount; i++) {
-          display.setCursor(6, 12 + i * 11);
-          display.print(i == M.cursor ? "> " : "  ");
-          display.print(g_tasks[i].done ? "[x] " : "[ ] ");
-          display.println(g_tasks[i].name);
-        }
-      }
-      display.display();
-      break;
-    }
-    case SCR_TASK_ADD:
-      drawListMenu("ADD TASK", TASK_PRESETS, TASK_PRESET_COUNT, M.cursor);
+      drawListMenu("DESK BUDDY", ROOT_ITEMS, ROOT_COUNT, M.cursor, bleIsConnected() ? "BT" : nullptr);
       break;
     case SCR_DEVICES: {
       const char *items[] = {"Light", "Fan"};
@@ -348,6 +294,46 @@ static void renderMenuScreen() {
       display.setCursor(0,50);
       display.print("Presence: ");
       display.println(S.presence ? "YES" : "NO");
+      display.display();
+      break;
+    }
+    case SCR_THRESH: {
+      const char *items[] = {"Ultrasonic", "LDR"};
+      drawListMenu("THRESHOLD SETUP", items, 2, M.cursor);
+      break;
+    }
+    case SCR_THRESH_US: {
+      display.clearDisplay();
+      display.setCursor(0,0); display.println("ULTRASONIC (cm)");
+      display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+      display.setCursor(0,14);
+      snprintf(buf, sizeof(buf), "%sON  <= %3d cm", M.setField == 0 ? "> " : "  ", (int)lroundf(DISTANCE_ON_CM));
+      display.println(buf);
+      display.setCursor(0,25);
+      snprintf(buf, sizeof(buf), "%sOFF >= %3d cm", M.setField == 1 ? "> " : "  ", (int)lroundf(DISTANCE_OFF_CM));
+      display.println(buf);
+      display.setCursor(0,38);
+      if (S.distanceCm >= 900.0f) snprintf(buf, sizeof(buf), "Now: ---  %s", S.presence ? "PRESENT" : "AWAY");
+      else snprintf(buf, sizeof(buf), "Now: %.1f %s", S.distanceCm, S.presence ? "PRESENT" : "AWAY");
+      display.println(buf);
+      display.setCursor(0,54); display.println("UP/DN +-1  OK: next");
+      display.display();
+      break;
+    }
+    case SCR_THRESH_LDR: {
+      display.clearDisplay();
+      display.setCursor(0,0); display.println("LDR (0-4095)");
+      display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+      display.setCursor(0,14);
+      snprintf(buf, sizeof(buf), "%sDARK   <= %4d", M.setField == 0 ? "> " : "  ", LDR_THRESHOLD_ON);
+      display.println(buf);
+      display.setCursor(0,25);
+      snprintf(buf, sizeof(buf), "%sBRIGHT >= %4d", M.setField == 1 ? "> " : "  ", LDR_THRESHOLD_OFF);
+      display.println(buf);
+      display.setCursor(0,38);
+      snprintf(buf, sizeof(buf), "Now: %d %s", S.ldrRaw, S.isDark ? "DARK" : "BRIGHT");
+      display.println(buf);
+      display.setCursor(0,54); display.println("UP/DN +-100 OK: next");
       display.display();
       break;
     }

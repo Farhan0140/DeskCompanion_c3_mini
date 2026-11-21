@@ -8,17 +8,16 @@
 enum Screen {
   SCR_IDLE,
   SCR_ROOT,
-  SCR_TIMER, SCR_TIMER_SET,
-  SCR_TASKS, SCR_TASK_LIST, SCR_TASK_ADD,
   SCR_DEVICES, SCR_LIGHT, SCR_FAN,
   SCR_SENSORS,
+  SCR_THRESH, SCR_THRESH_US, SCR_THRESH_LDR,
   SCR_WIFI,
 };
 
 struct MenuState {
   Screen screen = SCR_IDLE;
   int cursor = 0;
-  uint8_t setField = 0; // 0=hours,1=minutes,2=seconds (timer set screen)
+  uint8_t setField = 0; // 0=ON/dark threshold, 1=OFF/bright threshold (threshold edit screens)
 };
 extern MenuState M;
 

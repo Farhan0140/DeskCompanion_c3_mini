@@ -103,11 +103,30 @@ void buzzerClick()   { ToneStep s[] = {{2000, 40}};                       buzzer
 void buzzerOk()      { ToneStep s[] = {{2200, 40}, {0, 20}, {2600, 60}};  buzzerPlay(s, 3); }
 void buzzerError()   { ToneStep s[] = {{500, 100}, {0, 30}, {300, 150}};  buzzerPlay(s, 3); }
 void buzzerBoot()    { ToneStep s[] = {{1500, 60}, {1900, 60}, {2400, 90}}; buzzerPlay(s, 3); }
-void buzzerTaskDone(){ ToneStep s[] = {{1800,60},{2200,60},{2600,90}};    buzzerPlay(s, 3); }
-void buzzerTimerAlarm() {
-  ToneStep s[] = {{2500, 200}, {0, 100}, {2500, 200}, {0, 100}};
-  buzzerPlay(s, 4, true); // loops until buzzerStop() is called (e.g. on OK)
-}
 // Short, distinct "connected" chirp — plays once when WiFi finishes
 // associating in the background, whenever that happens.
 void buzzerWifiConnected() { ToneStep s[] = {{2800, 50}, {0, 30}, {3400, 70}}; buzzerPlay(s, 3); }
+
+// ---- BLE counter-button feedback ----
+// Ported 1:1 from Framework-ESP32-DevModule's PATTERN() tables (same
+// pitches, same rhythm). Only the tone half is kept — this board has no
+// status LED, so steps that were LED-only (silent) at the END of a
+// pattern are dropped; silent gaps between tones are kept.
+#define N_C5 523
+#define N_E5 659
+#define N_G5 784
+#define N_C6 1047
+void buzzerBleConnected()      { ToneStep s[] = {{1200, 90}, {0, 70}, {1800, 90}};  buzzerPlay(s, 3); }
+void buzzerBleDisconnected()   { ToneStep s[] = {{1500, 120}, {0, 60}, {900, 220}}; buzzerPlay(s, 3); }
+void buzzerBleCounted()        { ToneStep s[] = {{2400, 45}};                       buzzerPlay(s, 1); }
+void buzzerBleTargetReached()  {
+  ToneStep s[] = {{N_C5, 130}, {0, 30}, {N_E5, 130}, {0, 30}, {N_G5, 130}, {0, 30}, {N_C6, 380}};
+  buzzerPlay(s, 7);
+}
+void buzzerBleAlreadyComplete(){ ToneStep s[] = {{0, 60}, {330, 160}, {0, 90}, {330, 160}};  buzzerPlay(s, 4); }
+void buzzerBleNoTask()         { ToneStep s[] = {{0, 80}, {880, 250}, {0, 250}, {880, 250}}; buzzerPlay(s, 4); }
+void buzzerBleNotReceived()    {
+  ToneStep s[] = {{220, 70}, {0, 70}, {220, 70}, {0, 70}, {220, 70}};
+  buzzerPlay(s, 5);
+}
+void buzzerBleOfflinePress()   { ToneStep s[] = {{200, 450}};                       buzzerPlay(s, 1); }

@@ -9,9 +9,10 @@
     - LDR ambient light sensing (analog)
     - Relay control (Light / Fan) with AUTO / ON / OFF modes
     - Buzzer feedback
-    - Timer subsystem
-    - Task list (persisted with Preferences/NVS)
-    - Firebase Realtime Database sync (REST API over HTTPS)
+    - Threshold Setup menu (ultrasonic + LDR thresholds, saved in NVS)
+    - BLE counter button for the Soul Shield app (ported from the
+      ESP32 Dev Module build — same BLE identity/protocol)
+    - Server health check every 10 min (HTTPS), shown on the face
     - Online time via NTP
 
   Built for PlatformIO — see platformio.ini for board/library config.
@@ -30,10 +31,10 @@
 #include "devices.h"
 #include "inputs.h"
 #include "buzzer.h"
-#include "timer_task.h"
 #include "menu.h"
 #include "netsync.h"
 #include "wifi_portal.h"
+#include "ble_control.h"
 
 void setup() {
   Serial.begin(115200);
@@ -52,12 +53,17 @@ void setup() {
 
   // Peripherals
   buzzerInit();
-  devicesInit();
+  devicesInit();              // also opens the shared NVS handle (prefs)
+  settingsLoad();             // saved ultrasonic/LDR thresholds (needs prefs open)
   sensorsInit();
   inputsInit();
-  timerTaskInit(&prefs);
   faceInit();
   menuInit();
+
+  // BLE counter button — started before WiFi so the BLE stack gets its
+  // memory before TLS buffers fragment the heap. Advertises immediately;
+  // the Soul Shield app connects whenever it's in range.
+  bleInit();
 
   // Boot personality — "hi" + handshake icon, then WiFi connecting
   // takes over the face (see netInit() below) once it starts.
@@ -65,13 +71,13 @@ void setup() {
   buzzerBoot();
   showBootScreen();
 
-  // Networking (WiFi + NTP + Firebase) runs entirely in its own
-  // background task on core 0 from here on — see netsync.cpp. loop()
+  // Networking (WiFi + NTP + server health check) runs entirely in its
+  // own background task from here on — see netsync.cpp. loop()
   // below never touches the network directly, so a slow/stalled HTTP
   // call can't delay button/IR polling.
   netInit();
 
-  Serial.println(F("[BOOT] Ready.\n"));
+  Serial.printf("[BOOT] Ready. Free heap: %u bytes\n\n", (unsigned)ESP.getFreeHeap());
 }
 
 void loop() {
@@ -80,7 +86,7 @@ void loop() {
   inputsUpdate(now);          // buttons + IR -> raises events
   sensorsUpdate(now);         // ultrasonic + LDR polling with hysteresis
   devicesUpdate(now);         // AUTO relay logic based on sensor state
-  timerTaskUpdate(now);       // timer countdown + alarm trigger
+  bleUpdate(now);             // BLE counter button + app replies (non-blocking)
   menuUpdate(now);            // consumes input events, updates UI state
   faceUpdate(now);            // eases eyes/mouth toward target every frame
   buzzerUpdate(now);          // non-blocking tone sequencer

@@ -14,18 +14,30 @@
 #define SCREEN_HEIGHT     64
 
 // ---- Ultrasonic hysteresis (presence detection) ----
-static constexpr float DISTANCE_ON_CM   = 6.0f;   // trigger ON  when <= this
-static constexpr float DISTANCE_OFF_CM  = 8.0f;   // trigger OFF when >= this
+// DISTANCE_ON_CM / DISTANCE_OFF_CM are now runtime settings (settings.h),
+// editable from the "Threshold Setup" menu and saved to NVS. These are
+// just their factory defaults + the limits/step the menu enforces.
+static constexpr float DISTANCE_ON_CM_DEFAULT  = 6.0f;   // trigger ON  when <= this
+static constexpr float DISTANCE_OFF_CM_DEFAULT = 8.0f;   // trigger OFF when >= this
+static constexpr int   DISTANCE_STEP_CM = 1;
+static constexpr int   DISTANCE_MIN_CM  = 1;
+static constexpr int   DISTANCE_MAX_CM  = 200;
 static constexpr unsigned long US_INTERVAL_MS = 500;  // sensor poll interval (300ms allows echoes to dissipate completely)
 
 
 // ---- LDR ----
 static constexpr unsigned long LDR_INTERVAL_MS = 200;   // how often a raw sample is taken
 static constexpr uint8_t LDR_SAMPLE_COUNT = 15;          // moving-average window (~3s at 200ms/sample)
+// LDR_THRESHOLD_ON / LDR_THRESHOLD_OFF live in settings.h (runtime,
+// NVS-backed). Factory defaults + menu step/limits:
+static constexpr int LDR_THRESHOLD_ON_DEFAULT  = 1400;
+static constexpr int LDR_THRESHOLD_OFF_DEFAULT = 1600;
+static constexpr int LDR_STEP    = 100;
+static constexpr int LDR_MIN     = 0;
+static constexpr int LDR_MAX     = 4000;
 
 // ---- Behaviour ----
 static constexpr unsigned long IDLE_TIMEOUT_MS   = 30000; // -> idle face after this
-static constexpr int TIMER_MAX_MINUTES = 180;
 
 // ---- Frame / animation timing ----
 static constexpr unsigned long FRAME_INTERVAL_MS = 20;   // ~50 FPS render/ease tick
@@ -42,10 +54,24 @@ static constexpr unsigned long IR_DEBOUNCE_MS  = 250;   // min interval between 
 // open — open network, no password, so a phone can join it in one tap.
 #define WIFI_AP_SSID "DeskBuddy-Setup"
 
-// ---- Networking sync cadence ----
-static constexpr unsigned long FIREBASE_PUSH_INTERVAL_MS = 5000;   // push sensor/status
-static constexpr unsigned long FIREBASE_PULL_INTERVAL_MS = 2500;   // poll remote commands
+// ---- Networking cadence ----
 static constexpr unsigned long NTP_RESYNC_INTERVAL_MS     = 3600000UL; // 1 hour
+
+// ---- Server health check (see netsync.cpp) ----
+#define HEALTH_URL "https://soul-shield-api.onrender.com/health"
+static constexpr unsigned long HEALTH_INTERVAL_MS   = 600000UL; // every 10 minutes
+static constexpr unsigned long HEALTH_RETRY_MS      = 30000UL;  // one quick retry after a failure (Render cold start)
+static constexpr unsigned long HEALTH_FIRST_DELAY_MS = 3000UL;  // first check this long after WiFi connects
+static constexpr uint16_t      HEALTH_HTTP_TIMEOUT_MS = 20000;  // cold-starting servers can be slow
+
+// ---- BLE counter button (ported from Framework-ESP32-DevModule) ----
+// Identity MUST match lib/bluetooth/counter-ble.ts in the Soul Shield app.
+#define BLE_DEVICE_NAME  "SoulShield-ESP32"
+#define BLE_SERVICE_UUID "9f83f3d0-8f5f-4a3f-9a1d-2c6a8f4e5b01"
+#define BLE_CHAR_TX_UUID "a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d"  // ESP32 -> phone (notify)
+#define BLE_CHAR_RX_UUID "b2c3d4e5-6f7a-4b8c-9d0e-1f2a3b4c5d6e"  // phone -> ESP32 (write)
+static constexpr unsigned long BLE_ACK_TIMEOUT_MS = 1500; // wait this long for the app's answer
+static constexpr unsigned long BLE_DEBOUNCE_MS    = 50;   // counter-button debounce
 
 // =======================================================================
 // PIN CONFIGURATION  (ESP32-C3 Super Mini)
@@ -66,6 +92,10 @@ static constexpr unsigned long NTP_RESYNC_INTERVAL_MS     = 3600000UL; // 1 hour
 #define RELAY_ACTIVE_LOW true
 
 #define PIN_BUZZER       10
+
+// BLE counter button: GPIO1 <-> GND (internal pull-up, no resistor).
+// (The Dev Module version used GPIO4, which is OLED SDA on this board.)
+#define PIN_BLE_BUTTON   1
 
 
 // =======================================================================

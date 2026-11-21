@@ -16,6 +16,14 @@ void buzzerClick();
 void buzzerOk();
 void buzzerError();
 void buzzerBoot();
-void buzzerTaskDone();
-void buzzerTimerAlarm();
 void buzzerWifiConnected();
+
+// BLE counter-button feedback (same tones as the ESP32 Dev Module build)
+void buzzerBleConnected();
+void buzzerBleDisconnected();
+void buzzerBleCounted();
+void buzzerBleTargetReached();
+void buzzerBleAlreadyComplete();
+void buzzerBleNoTask();
+void buzzerBleNotReceived();
+void buzzerBleOfflinePress();

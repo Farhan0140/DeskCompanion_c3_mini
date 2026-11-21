@@ -8,21 +8,39 @@
 enum EyeExpression {
   EYE_NORMAL, EYE_HAPPY, EYE_SLEEPY, EYE_SURPRISED,
   EYE_ANGRY, EYE_CONFUSED, EYE_SAD,
-  EYE_WOW, EYE_CRYING, EYE_HEADACHE, EYE_LAUGHING
+  EYE_WOW, EYE_CRYING, EYE_HEADACHE, EYE_LAUGHING,
+  // ---- 10 new expressions, mixed randomly into the idle loop ----
+  EYE_LOVE,        // heart eyes
+  EYE_STAR,        // star-struck (also used for BLE "target reached")
+  EYE_DIZZY,       // spinning spiral eyes
+  EYE_SUSPICIOUS,  // one eye narrowed, side-eye
+  EYE_COOL,        // sunglasses
+  EYE_SHY,         // looking down + blushing cheeks
+  EYE_BORED,       // flat half-closed lids
+  EYE_THINKING,    // looking up + animated "..." thought dots
+  EYE_SCARED,      // small trembling eyes
+  EYE_KAWAII,      // ^ ^ closed happy eyes
+  // ---- event-only ----
+  EYE_CONTENT      // relieved closed eyes — the "server OK" face
 };
 
 enum MouthExpression {
   MOUTH_NEUTRAL, MOUTH_HAPPY, MOUTH_SMILE, MOUTH_SURPRISED,
   MOUTH_SAD, MOUTH_TALK,
-  MOUTH_LAUGH, MOUTH_CRY, MOUTH_GRIMACE
+  MOUTH_LAUGH, MOUTH_CRY, MOUTH_GRIMACE,
+  MOUTH_SMIRK,   // one-sided smile
+  MOUTH_WAVY,    // wobbly line (dizzy/scared)
+  MOUTH_FLAT,    // straight line (bored)
+  MOUTH_TONGUE   // smile with tongue out
 };
 
 enum GazeDir { GAZE_CENTER, GAZE_LEFT, GAZE_RIGHT, GAZE_UP, GAZE_DOWN };
 
 // Small badge icon drawn in the corner alongside an expression, to give
-// context-specific events (WiFi connecting, timer ringing, ...) a
+// context-specific events (WiFi connecting, BLE, server status, ...) a
 // distinct look beyond just the eyes/mouth. ICON_NONE draws nothing.
-enum FaceIcon { ICON_NONE, ICON_WIFI, ICON_BELL, ICON_HANDSHAKE, ICON_AIRFLOW, ICON_SWEAT, ICON_MOON };
+enum FaceIcon { ICON_NONE, ICON_WIFI, ICON_BELL, ICON_HANDSHAKE, ICON_AIRFLOW, ICON_SWEAT, ICON_MOON,
+                ICON_BT, ICON_BT_OFF, ICON_CHECK, ICON_CROSS };
 
 // Contextual events other modules can raise to take over the face for
 // a moment (or, for WIFI_CONNECTING, until explicitly cleared). See
@@ -30,11 +48,22 @@ enum FaceIcon { ICON_NONE, ICON_WIFI, ICON_BELL, ICON_HANDSHAKE, ICON_AIRFLOW, I
 enum FaceEvent {
   FACE_EVENT_BOOT,            // first boot greeting
   FACE_EVENT_WIFI_CONNECTING, // held for as long as WiFi is (re)connecting
-  FACE_EVENT_TIMER_RING,      // timer alarm just fired
   FACE_EVENT_FAN_ON,
   FACE_EVENT_FAN_OFF,
   FACE_EVENT_LIGHT_ON,
-  FACE_EVENT_LIGHT_OFF
+  FACE_EVENT_LIGHT_OFF,
+  // Server health check (netsync.cpp, every 10 min)
+  FACE_EVENT_SERVER_OK,
+  FACE_EVENT_SERVER_DOWN,
+  // BLE counter button (ble_control.cpp)
+  FACE_EVENT_BLE_CONNECTED,
+  FACE_EVENT_BLE_DISCONNECTED,
+  FACE_EVENT_BLE_COUNTED,
+  FACE_EVENT_BLE_TARGET,
+  FACE_EVENT_BLE_ALREADY_DONE,
+  FACE_EVENT_BLE_NO_TASK,
+  FACE_EVENT_BLE_NOT_RECEIVED,
+  FACE_EVENT_BLE_OFFLINE
 };
 
 // ---- current (eased/animated) values ----
@@ -48,6 +77,12 @@ struct FaceAnim {
   // are driven toward these targets by faceUpdate() each frame.
   float lidOpenL = 1.0f, lidOpenL_t = 1.0f;
   float lidOpenR = 1.0f, lidOpenR_t = 1.0f;
+
+  // Per-eye height squash (1 = full). Unlike the lids above this is set
+  // by the expression, not the blink — e.g. SUSPICIOUS narrows one eye.
+  // Always 1 for the original expressions.
+  float squashL = 1.0f, squashL_t = 1.0f;
+  float squashR = 1.0f, squashR_t = 1.0f;
 
   float pupilX = 0, pupilY = 0;       // current gaze offset (px)
   float pupilX_t = 0, pupilY_t = 0;   // target gaze offset

@@ -43,7 +43,15 @@ void sensorsInit() {
 }
 
 static float readDistanceCm() {
-  noInterrupts();
+  // BLE COEXISTENCE: this used to be noInterrupts()/interrupts(), which on
+  // this core really masks ALL interrupts — for up to the 15ms pulseIn()
+  // timeout. The BLE controller needs its radio interrupts serviced, so a
+  // 15ms blackout every 500ms risks dropped connections / controller
+  // asserts. Suspending the *scheduler* instead keeps the measurement just
+  // as protected from task preemption (no BLE/WiFi task can run mid-pulse
+  // and stretch the timing), while the short radio ISRs (microseconds,
+  // well under 1cm of error) still run.
+  vTaskSuspendAll();
   digitalWrite(PIN_TRIG, LOW);
   delayMicroseconds(2);
 
@@ -52,7 +60,7 @@ static float readDistanceCm() {
   digitalWrite(PIN_TRIG, LOW);
 
   unsigned long duration = pulseIn(PIN_ECHO, HIGH, 15000UL); // 15ms timeout max (~2.5m range)
-  interrupts();
+  xTaskResumeAll();
 
   if (duration == 0) return 999.0f; // No object / out of range
 

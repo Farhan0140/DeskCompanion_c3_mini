@@ -6,7 +6,6 @@
 #include "face.h"
 #include "buzzer.h"
 #include "globals.h"
-#include "netsync.h"
 
 DeviceState D;
 
@@ -16,11 +15,10 @@ static inline void relayWrite(int pin, bool on) {
 }
 
 // Relay modes (AUTO/ON/OFF) are persisted to NVS so a change made via
-// the IR remote (or a menu, or Firebase) survives a reset/power cycle
-// instead of always coming back up in AUTO. `prefs` is the shared NVS
-// handle (see globals.h) also used by timer_task.cpp for the task
-// list — begin() is safe to call again there since it's a no-op once
-// already started on the same namespace.
+// the IR remote (or the menu) survives a reset/power cycle instead of
+// always coming back up in AUTO. `prefs` is the shared NVS handle (see
+// globals.h) also used for WiFi credentials and the sensor thresholds —
+// it's opened here, once, at boot.
 void devicesInit() {
   pinMode(PIN_RELAY_LIGHT, OUTPUT);
   pinMode(PIN_RELAY_FAN, OUTPUT);
@@ -36,14 +34,12 @@ void setLightMode(DeviceMode m) {
   if (D.lightMode == m) return;
   D.lightMode = m;
   prefs.putUChar("light_mode", (uint8_t)m);
-  netMarkModeDirty(); // push the new mode to Firebase before its next pull can read the stale one back
 }
 
 void setFanMode(DeviceMode m) {
   if (D.fanMode == m) return;
   D.fanMode = m;
   prefs.putUChar("fan_mode", (uint8_t)m);
-  netMarkModeDirty();
 }
 
 void devicesUpdate(unsigned long now) {

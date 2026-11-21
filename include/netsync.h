@@ -3,11 +3,10 @@
 // NETSYNC MODULE — declarations only; see netsync.cpp.
 //
 // netInit() is the only thing the main loop needs to call: it starts
-// a background FreeRTOS task (pinned to core 0) that owns WiFi/NTP/
-// Firebase entirely from then on. There is no netUpdate() to call
-// from loop() anymore — that's the point: networking (including the
-// potentially slow Firebase HTTPS calls) never runs on the same core
-// as button/IR polling, so it can't stall UI responsiveness.
+// a background FreeRTOS task that owns WiFi/NTP/server-health-check
+// entirely from then on. There is no netUpdate() to call from loop() —
+// that's the point: networking (including the potentially slow HTTPS
+// health check) never blocks button/IR polling.
 // =======================================================================
 #include <Arduino.h>
 
@@ -18,22 +17,16 @@ void netInit();
 // main loop even though NTP itself is serviced by the background task.
 bool getLocalTimeStr(char *out, size_t outLen);
 
-// Call whenever D.lightMode/D.fanMode changes locally (IR remote,
-// menu, etc.) so the background net task pushes the new mode to
-// Firebase's /deskbuddy/light_mode and /deskbuddy/fan_mode nodes on
-// its very next tick — before its next periodic pull can read back
-// the now-stale value it still has and stomp the local change. Safe
-// to call from core 1 (main loop); just sets a flag the core-0 task
-// polls.
-void netMarkModeDirty();
-
 // Call once the WiFi setup portal (see wifi_portal.h) has just saved
 // fresh credentials to NVS — reloads them and immediately (re)tries
 // WiFi.begin() with the new SSID/password instead of waiting out the
-// normal 15s retry timer on the old ones. Safe to call from core 1.
+// normal 15s retry timer on the old ones. Safe to call from the main loop.
 void netRequestReconnect();
 
 // True once netsync has an active WiFi connection. Safe to poll from
-// core 1 (e.g. the WiFi Setup menu screen) — see the thread-safety
-// note on pushFirebaseStatus() in netsync.cpp.
+// the main loop (e.g. the WiFi Setup menu screen).
 bool netIsWifiConnected();
+
+// Result of the most recent server health check (HEALTH_URL in
+// config.h). false until the first check has succeeded.
+bool netIsServerOk();
