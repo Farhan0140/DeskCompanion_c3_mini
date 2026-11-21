@@ -103,6 +103,20 @@ void faceSetExpression(EyeExpression e, MouthExpression m) {
     case EYE_SCARED:     F.eyeW_t = 28; F.eyeH_t = 36; F.browRaise_t = 5; break; // + tremble
     case EYE_KAWAII:     F.eyeW_t = 30; F.eyeH_t = 30; break;
     case EYE_CONTENT:    F.eyeW_t = 30; F.eyeH_t = 30; break;
+    // ---- batch 2 ----
+    case EYE_SHOCKED:    F.eyeW_t = 38; F.eyeH_t = 38; F.browRaise_t = 4; break;
+    case EYE_SQUINT:     F.eyeW_t = 46; F.eyeH_t = 40; F.squashL_t = 0.22f; F.squashR_t = 0.22f;
+                         F.lTilt_t = 6; F.rTilt_t = -6; break;
+    case EYE_MOCK:       F.eyeW_t = 40; F.eyeH_t = 40; F.browRaise_t = 2; break;
+    // wedge cut deeper on the INNER side of each eye -> V-shaped glare
+    case EYE_EVIL:       F.eyeH_t = 30; F.lTilt_t = -28; F.rTilt_t = 28; break;
+    case EYE_ROFL:       F.eyeW_t = 30; F.eyeH_t = 30; break;
+    case EYE_SARCASTIC:  F.eyeH_t = 40; F.squashL_t = 0.5f; F.squashR_t = 0.7f; break;
+    case EYE_DISGUST:    F.eyeH_t = 40; F.squashL_t = 0.3f; F.squashR_t = 0.6f;
+                         F.lTilt_t = -12; F.rTilt_t = 6; break;
+    case EYE_TERRIFIED:  F.eyeW_t = 34; F.eyeH_t = 34; break;
+    case EYE_PUZZLED:    F.eyeH_t = 40; F.squashR_t = 0.55f; F.rTilt_t = 10; break;
+    case EYE_YAWN:       F.eyeW_t = 30; F.eyeH_t = 30; break;
     default: break; // EYE_NORMAL
   }
 
@@ -119,6 +133,14 @@ void faceSetExpression(EyeExpression e, MouthExpression m) {
     case MOUTH_WAVY:      F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.0f; F.mouthWidth_t = 30; break;
     case MOUTH_FLAT:      F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.0f; F.mouthWidth_t = 22; break;
     case MOUTH_TONGUE:    F.mouthSmile_t = 0.7f;  F.mouthOpen_t = 0.15f; F.mouthWidth_t = 28; break;
+    case MOUTH_O:         F.mouthWidth_t = 10; break;
+    case MOUTH_TAUNT:     F.mouthSmile_t = 0.5f;  F.mouthOpen_t = 0.25f; F.mouthWidth_t = 26; break;
+    case MOUTH_EVIL:      F.mouthWidth_t = 40; break;
+    case MOUTH_ROAR:      F.mouthWidth_t = 30; break;
+    case MOUTH_DISGUST:   F.mouthSmile_t = -0.6f; F.mouthOpen_t = 0.1f;  F.mouthWidth_t = 26; break;
+    case MOUTH_SCREAM:    F.mouthWidth_t = 14; break;
+    case MOUTH_SKEW:      F.mouthWidth_t = 22; break;
+    case MOUTH_YAWN:      F.mouthWidth_t = 14; break;
     default:               F.mouthSmile_t = 0.0f;  F.mouthOpen_t = 0.12f; break;
   }
 }
@@ -310,8 +332,8 @@ static void faceRunIdlePersonality(unsigned long now) {
   if (g_menuActive || g_eventActive) return;
 
   // Picks a random gaze + expression when nothing else is driving the
-  // face: the original 9 states (0-8, unchanged) plus the 10 newer
-  // expressions (9-18), never the same state twice in a row. CRYING and HEADACHE are
+  // face: the original 9 states (0-8, unchanged) plus the newer
+  // expressions (9-28), never the same state twice in a row. CRYING and HEADACHE are
   // intentionally NOT part of the spontaneous idle loop — a desk
   // companion randomly crying for no reason would be a strange UX.
   // Trigger those two (and a wink) yourself from wherever makes sense
@@ -320,7 +342,7 @@ static void faceRunIdlePersonality(unsigned long now) {
   //   faceSetExpression(EYE_HEADACHE, MOUTH_GRIMACE);  // repeated errors
   //   faceWink(true);                                   // a little easter egg
   if (now >= F.idleStateChangeAt) {
-    static constexpr uint8_t IDLE_STATE_COUNT = 19;
+    static constexpr uint8_t IDLE_STATE_COUNT = 29;
     uint8_t next;
     do { next = (uint8_t)random(0, IDLE_STATE_COUNT); } while (next == F.idleStep);
     F.idleStep = next;
@@ -348,6 +370,18 @@ static void faceRunIdlePersonality(unsigned long now) {
       case 16: faceSetGaze(GAZE_UP); F.pupilX_t = 8;  faceSetExpression(EYE_THINKING,   MOUTH_SMIRK);  break; // hmm...
       case 17: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_SCARED,     MOUTH_WAVY);   break; // scared
       case 18: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_KAWAII,     MOUTH_TONGUE); break; // ^ ^ :P
+      // ---- batch 2 ----
+      case 19: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_SHOCKED,    MOUTH_O);       break; // O_O
+      case 20: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_SQUINT,     MOUTH_FLAT);    break; // squinting stare
+      case 21: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_MOCK,       MOUTH_TAUNT);   break; // nyah-nyah
+      case 22: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_EVIL,       MOUTH_EVIL);    break; // evil grin
+      case 23: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_ROFL,       MOUTH_ROAR);    break; // roaring laughter
+      case 24: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_SARCASTIC,  MOUTH_SMIRK);   break; // sarcastic eye-roll
+      case 25: faceSetGaze(random(0, 2) ? GAZE_LEFT : GAZE_RIGHT);
+               faceSetExpression(EYE_DISGUST,    MOUTH_DISGUST);                                         break; // ew
+      case 26: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_TERRIFIED,  MOUTH_SCREAM);  break; // terrified
+      case 27: faceSetGaze(GAZE_RIGHT);               faceSetExpression(EYE_PUZZLED,    MOUTH_SKEW);    break; // confused "?"
+      case 28: faceSetGaze(GAZE_CENTER);              faceSetExpression(EYE_YAWN,       MOUTH_YAWN);    break; // big yawn
     }
     F.idleStateChangeAt = now + random(2200, 4500);
   }
@@ -479,6 +513,21 @@ static inline void drawPainMarks(int midCx, int cy) {
 
 // Quick side-to-side shake used for EYE_LAUGHING ("very loud laughter"),
 // applied to both eyes and the mouth together so the whole face shakes.
+// Whole-face motion for some batch-2 expressions, computed once per
+// frame (faceRenderIdle) so eyes and mouth move together. Always 0 for
+// every other expression, so those draw exactly as before.
+static int g_fxX = 0, g_fxY = 0;
+static void computeFaceFx() {
+  g_fxX = 0; g_fxY = 0;
+  if (F.expr == EYE_ROFL) {            // bounce + wobble while roaring
+    g_fxY = -(int)(fabsf(sinf(millis() * 0.02f)) * 4);
+    g_fxX = (int)(sinf(millis() * 0.03f) * 2);
+  } else if (F.expr == EYE_TERRIFIED) { // whole-face shiver
+    g_fxX = (int)random(-1, 2);
+    g_fxY = (int)random(-1, 2);
+  }
+}
+
 static inline int laughShakeX() {
   if (F.expr != EYE_LAUGHING) return 0;
   return (int)(sinf(millis() * 0.03f) * 2.5f);
@@ -550,6 +599,15 @@ static void drawShades(int leftCx, int rightCx, int cy) {
 // Draws the eyes for expressions that don't use the rounded-rect eye at
 // all. Returns false for every other expression (incl. all the original
 // ones), which then draw exactly as before.
+// ">" (pointRight) or "<" squeezed-shut eye, 3px thick.
+static void drawChevron(int cx, int cy, int s, bool pointRight) {
+  int dir = pointRight ? 1 : -1;
+  for (int t = -1; t <= 1; t++) {
+    display.drawLine(cx - dir * s + t, cy - s, cx + dir * s + t, cy, SSD1306_WHITE);
+    display.drawLine(cx + dir * s + t, cy, cx - dir * s + t, cy + s, SSD1306_WHITE);
+  }
+}
+
 static bool drawSpecialEyes(int leftCx, int rightCx, int cy) {
   unsigned long ms = millis();
   // A normal two-eye blink still reads on shaped eyes as a closed line.
@@ -586,6 +644,52 @@ static bool drawSpecialEyes(int leftCx, int rightCx, int cy) {
       drawArcEye(leftCx, cy, w / 2, false);
       drawArcEye(rightCx, cy, w / 2, false);
       return true;
+    // ---- batch 2 ----
+    case EYE_SHOCKED: {
+      int r = w / 2;
+      const int cxs[2] = {leftCx, rightCx};
+      const bool closed[2] = {closedL, closedR};
+      for (int i = 0; i < 2; i++) {
+        if (closed[i]) { display.drawFastHLine(cxs[i] - r, cy, 2 * r, SSD1306_WHITE); continue; }
+        display.fillCircle(cxs[i], cy, r, SSD1306_WHITE);
+        display.fillCircle(cxs[i], cy, 4, SSD1306_BLACK); // tiny shocked pupil
+      }
+      return true;
+    }
+    case EYE_TERRIFIED: {
+      int r = w / 2;
+      const int cxs[2] = {leftCx, rightCx};
+      for (int i = 0; i < 2; i++) {
+        display.drawCircle(cxs[i], cy, r, SSD1306_WHITE);
+        display.drawCircle(cxs[i], cy, r - 1, SSD1306_WHITE);
+        display.fillCircle(cxs[i] + (int)random(-2, 3), cy + (int)random(-2, 3), 2, SSD1306_WHITE); // darting pupils
+      }
+      // worried brows, raised in the middle
+      display.drawLine(leftCx - r, cy - r - 2, leftCx + r - 4, cy - r - 7, SSD1306_WHITE);
+      display.drawLine(rightCx + r, cy - r - 2, rightCx - r + 4, cy - r - 7, SSD1306_WHITE);
+      // sweat drop at the right temple
+      display.fillCircle(SCREEN_WIDTH - 8, 30, 2, SSD1306_WHITE);
+      display.fillTriangle(SCREEN_WIDTH - 10, 29, SCREEN_WIDTH - 6, 29, SCREEN_WIDTH - 8, 24, SSD1306_WHITE);
+      return true;
+    }
+    case EYE_MOCK:
+      drawChevron(leftCx, cy, 10, true);     // squeezed ">"
+      drawOneEye(rightCx, cy, F.lidOpenR);   // other eye wide open
+      return true;
+    case EYE_ROFL: {
+      drawChevron(leftCx, cy, 10, true);
+      drawChevron(rightCx, cy, 10, false);
+      // tears of laughter flying off the outer corners
+      float p = (millis() % 600) / 600.0f;
+      int dx = (int)(p * 14), dy = (int)(p * p * 16) - 4;
+      display.fillCircle(leftCx - 12 - dx, cy + dy, 2, SSD1306_WHITE);
+      display.fillCircle(rightCx + 12 + dx, cy + dy, 2, SSD1306_WHITE);
+      return true;
+    }
+    case EYE_YAWN:
+      display.fillRect(leftCx - 13, cy, 26, 3, SSD1306_WHITE);
+      display.fillRect(rightCx - 13, cy, 26, 3, SSD1306_WHITE);
+      return true;
     default:
       return false;
   }
@@ -595,9 +699,19 @@ static void drawEyes() {
   int baseY = 26;
   int shake = laughShakeX();
   int tremble = (F.expr == EYE_SCARED) ? (int)random(-1, 2) : 0;
-  int leftCx  = SCREEN_WIDTH/2 - 26 + (int)F.pupilX + shake + tremble;
-  int rightCx = SCREEN_WIDTH/2 + 26 + (int)F.pupilX + shake + tremble;
-  int cy = baseY + (int)F.pupilY - (int)F.browRaise;
+  // Eye-only motion for a couple of batch-2 expressions (0 otherwise).
+  int eyeDx = 0, eyeDy = 0;
+  if (F.expr == EYE_SQUINT) {
+    eyeDx = (int)(sinf(millis() * 0.002f) * 7);          // slow suspicious scan
+  } else if (F.expr == EYE_SARCASTIC) {
+    float p = (millis() % 3000) / 3000.0f;                // eye-roll: left -> up -> right, hold, drift back
+    if (p < 0.4f)      { float a = PI * (1 - p / 0.4f); eyeDx = (int)(cosf(a) * 8); eyeDy = -(int)(sinf(a) * 7); }
+    else if (p < 0.8f) { eyeDx = 8; }
+    else               { eyeDx = 8 - (int)((p - 0.8f) / 0.2f * 16); }
+  }
+  int leftCx  = SCREEN_WIDTH/2 - 26 + (int)F.pupilX + shake + tremble + g_fxX + eyeDx;
+  int rightCx = SCREEN_WIDTH/2 + 26 + (int)F.pupilX + shake + tremble + g_fxX + eyeDx;
+  int cy = baseY + (int)F.pupilY - (int)F.browRaise + g_fxY + eyeDy;
 
   if (drawSpecialEyes(leftCx, rightCx, cy)) return;
 
@@ -632,6 +746,21 @@ static void drawEyes() {
     if (n >= 2) display.fillCircle(9, 9, 2, SSD1306_WHITE);
     if (n >= 3) display.fillCircle(16, 4, 3, SSD1306_WHITE);
   }
+  if (F.expr == EYE_DISGUST) {
+    // wrinkled nose between the eyes
+    int mx = (leftCx + rightCx) / 2;
+    for (int k = 0; k < 3; k++)
+      display.drawLine(mx - 3, cy - 8 + k * 4, mx + 3, cy - 10 + k * 4, SSD1306_WHITE);
+  }
+  if (F.expr == EYE_PUZZLED) {
+    // floating, bobbing "?"
+    int bob = (int)(sinf(millis() * 0.006f) * 2);
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(2, 4 + bob);
+    display.print('?');
+    display.setTextSize(1);
+  }
 
   if (F.expr == EYE_CRYING) {
     int eyeBottomY = cy + (int)(F.eyeH / 2);
@@ -649,6 +778,62 @@ static void drawMouth() {
   int cx = SCREEN_WIDTH / 2 + shake;
   float w = max(10.0f, F.mouthWidth);
   float half = w / 2.0f;
+  cx += g_fxX; cy += g_fxY; // 0 except ROFL bounce / TERRIFIED shiver
+
+  // ---- batch-2 mouth shapes ----
+  switch (F.mouthExpr) {
+    case MOUTH_O:
+      display.drawCircle(cx, cy, 5, SSD1306_WHITE);
+      display.drawCircle(cx, cy, 4, SSD1306_WHITE);
+      return;
+    case MOUTH_SCREAM:
+      display.drawRoundRect(cx - 7, cy - 7, 14, 15, 6, SSD1306_WHITE);
+      display.drawRoundRect(cx - 6, cy - 6, 12, 13, 5, SSD1306_WHITE);
+      return;
+    case MOUTH_SKEW:
+      display.drawLine(cx - (int)half, cy + 3, cx - 3, cy, SSD1306_WHITE);
+      display.drawLine(cx - 3, cy, cx + (int)half, cy - 2, SSD1306_WHITE);
+      return;
+    case MOUTH_YAWN: {
+      float open = sinf(((millis() % 3500) / 3500.0f) * PI); // 0 -> 1 -> 0
+      int mh = 3 + (int)(open * 12), mw = 10 + (int)(open * 6);
+      int rr = min(mw, mh) / 2;
+      display.drawRoundRect(cx - mw / 2, cy - mh / 2, mw, mh, rr, SSD1306_WHITE);
+      if (mh > 4) display.drawRoundRect(cx - mw / 2 + 1, cy - mh / 2 + 1, mw - 2, mh - 2, max(0, rr - 1), SSD1306_WHITE);
+      return;
+    }
+    case MOUTH_EVIL: {
+      // filled crescent grin, corners hooked up, with black gaps for teeth
+      int hw = (int)half;
+      for (int x = -hw; x <= hw; x++) {
+        float nx = (float)x / hw;
+        int top = cy - 2 - (int)(7 * nx * nx);
+        int h = 1 + (int)(7 * (1 - nx * nx));
+        display.drawFastVLine(cx + x, top, h, SSD1306_WHITE);
+        if (x > -hw + 2 && x < hw - 2 && (x + hw) % 5 == 0 && h > 2)
+          display.drawFastVLine(cx + x, top + 1, h - 1, SSD1306_BLACK);
+      }
+      return;
+    }
+    case MOUTH_ROAR: {
+      // huge open "D": white outline band (teeth on top), black inside, tongue
+      int hw = (int)half, top = cy - 6;
+      const int H = 13;
+      for (int x = -hw; x <= hw; x++) {
+        float nx = (float)x / hw;
+        int h = max(1, (int)(sqrtf(1 - nx * nx) * H));
+        display.drawFastVLine(cx + x, top, h, SSD1306_WHITE);
+      }
+      for (int x = -(hw - 2); x <= hw - 2; x++) {
+        float nx = (float)x / (hw - 2);
+        int h = (int)(sqrtf(1 - nx * nx) * (H - 4));
+        if (h > 0) display.drawFastVLine(cx + x, top + 2, h, SSD1306_BLACK);
+      }
+      display.fillCircle(cx, top + H - 4, 4, SSD1306_WHITE);
+      return;
+    }
+    default: break;
+  }
 
   if (F.mouthExpr == MOUTH_GRIMACE) {
     // Gritted-teeth zigzag instead of the smooth curve — reads as
@@ -699,6 +884,7 @@ static void drawMouth() {
     // at the corners (nx=+-1) it lifts (smile) or drops (frown).
     float arc = smileBend * (nx * nx);
     if (F.mouthExpr == MOUTH_SMIRK && nx < 0) arc *= 0.15f; // only the right corner lifts
+    if (F.mouthExpr == MOUTH_DISGUST && nx < 0) arc *= 1.6f;  // lopsided: left corner drops further
 
     // Vertical bulge, strongest at mouth center, for open/talking shapes.
     float bulge = sinf(t * PI) * openPx;
@@ -709,6 +895,15 @@ static void drawMouth() {
     prevX = x; prevY = y;
   }
 
+  if (F.mouthExpr == MOUTH_TAUNT) {
+    // big tongue sticking out, wagging side to side
+    int wag = (int)(sinf(millis() * 0.02f) * 3);
+    display.fillRoundRect(cx - 5 + wag, cy, 10, 10, 4, SSD1306_WHITE);
+    display.drawFastVLine(cx + wag, cy + 2, 6, SSD1306_BLACK);
+  }
+  if (F.mouthExpr == MOUTH_DISGUST) {
+    display.fillCircle(cx - 7, cy + 3, 2, SSD1306_WHITE); // "bleh" tongue tip
+  }
   if (F.mouthExpr == MOUTH_TONGUE) {
     display.fillCircle(cx + 3, cy + 3, 3, SSD1306_WHITE);
     display.drawFastVLine(cx + 3, cy + 2, 3, SSD1306_BLACK); // tongue groove
@@ -847,6 +1042,7 @@ static void drawBleStatus() {
 
 void faceRenderIdle() {
   display.clearDisplay();
+  computeFaceFx();
   drawEyes();
   drawMouth();
   drawIcon(F.icon);

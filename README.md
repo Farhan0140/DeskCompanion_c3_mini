@@ -28,7 +28,7 @@ Built on an ESP32-C3 Super Mini with PlatformIO / Arduino framework.
 
 **Animated face**
 - A smooth, eased (not frame-swapped) OLED face — blinking, breathing, gaze, winks — with an idle "personality" loop that wanders between expressions on its own.
-- 19 idle expressions picked at random: the original set plus heart eyes, star-struck, dizzy spirals, suspicious side-eye, cool sunglasses, shy blush, bored, thinking "...", scared tremble and kawaii "^ ^ :P".
+- 29 idle expressions picked at random: the original set plus heart eyes, star-struck, dizzy spirals, suspicious side-eye, cool sunglasses, shy blush, bored, thinking "...", scared tremble, kawaii "^ ^ :P", shocked O_O, squinting stare, mocking tongue-out taunt, evil grin, roaring laughter, sarcastic eye-roll, disgusted "bleh", terrified, puzzled "?" and a big yawn.
 - Contextual expressions that take over the face for real events: a boot greeting, a "connecting…" face with a WiFi icon while WiFi (re)connects, a relaxed face + airflow icon when the fan turns on, a sweat-drop icon when it turns off, a joyful face when the light turns on, a sleepy face + moon/"Zzz" icon when it turns off, a content "SERVER OK" / sad "SERVER DOWN" face after each health check, and BLE events (connected, +1 counted, target reached, ...).
 
 **Automated relay control**

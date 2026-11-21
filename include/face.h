@@ -20,6 +20,17 @@ enum EyeExpression {
   EYE_THINKING,    // looking up + animated "..." thought dots
   EYE_SCARED,      // small trembling eyes
   EYE_KAWAII,      // ^ ^ closed happy eyes
+  // ---- 10 more (batch 2), also in the random idle loop ----
+  EYE_SHOCKED,     // O_O round eyes with tiny pupils
+  EYE_SQUINT,      // narrow slits, slowly scanning side to side
+  EYE_MOCK,        // one eye squeezed ">" — taunting
+  EYE_EVIL,        // steep V-shaped glare
+  EYE_ROFL,        // "> <" squeezed, bouncing, tears flying
+  EYE_SARCASTIC,   // half-lidded eye-roll
+  EYE_DISGUST,     // uneven squint + wrinkled nose
+  EYE_TERRIFIED,   // hollow eyes, shaking pupils, worried brows, sweat
+  EYE_PUZZLED,     // mismatched eyes + floating "?"
+  EYE_YAWN,        // eyes shut tight while yawning
   // ---- event-only ----
   EYE_CONTENT      // relieved closed eyes — the "server OK" face
 };
@@ -31,7 +42,15 @@ enum MouthExpression {
   MOUTH_SMIRK,   // one-sided smile
   MOUTH_WAVY,    // wobbly line (dizzy/scared)
   MOUTH_FLAT,    // straight line (bored)
-  MOUTH_TONGUE   // smile with tongue out
+  MOUTH_TONGUE,  // smile with tongue out
+  MOUTH_O,       // small round "o"
+  MOUTH_TAUNT,   // open grin, big wagging tongue
+  MOUTH_EVIL,    // wide crescent grin with teeth
+  MOUTH_ROAR,    // huge open laughing "D"
+  MOUTH_DISGUST, // lopsided frown, tongue tip out ("bleh")
+  MOUTH_SCREAM,  // tall open oval
+  MOUTH_SKEW,    // slanted, unsure line
+  MOUTH_YAWN     // oval that slowly opens and closes
 };
 
 enum GazeDir { GAZE_CENTER, GAZE_LEFT, GAZE_RIGHT, GAZE_UP, GAZE_DOWN };
